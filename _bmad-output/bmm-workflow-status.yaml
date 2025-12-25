@@ -49,10 +49,10 @@ workflow_status:
     name: "Planning"
     workflows:
       - id: "create-prd"
-        status: "required"
+        status: "_bmad-output/prd.md"
         agent: "pm"
         command: "/bmad:bmm:workflows:create-prd"
-        note: "Transform brief.md into structured PRD"
+        note: "PRD completed with 8 functional requirements, 3 personas, 4 user journeys"
 
       - id: "create-ux-design"
         status: "conditional"
@@ -65,10 +65,10 @@ workflow_status:
     name: "Solutioning"
     workflows:
       - id: "create-architecture"
-        status: "required"
+        status: "_bmad-output/architecture.md"
         agent: "architect"
         command: "/bmad:bmm:workflows:create-architecture"
-        note: "Transform tech stack decisions from brief.md into Architecture doc"
+        note: "Architecture completed with 3-tier LLM detection strategy (rule-based + local LLM + cloud LLM)"
 
       - id: "create-epics-and-stories"
         status: "required"

@@ -23,13 +23,16 @@ lastStep: 10
 
 This architecture document defines the system design for HandoffKit, an open-source Python SDK and web dashboard for AI-to-human handoffs in conversational AI systems. The architecture follows a **dual-package design pattern** with a core SDK library and optional dashboard, emphasizing framework-agnosticism, developer experience, and production readiness.
 
+HandoffKit uses a **3-tier hybrid detection strategy** combining rule-based screening, local LLM semantic analysis, and optional cloud LLM for highest accuracy, balancing performance, privacy, and cost.
+
 ### Key Architectural Principles
 
 1. **Framework-Agnostic Core** - SDK works with any conversational AI system
-2. **Modular Design** - Independent components (triggers, sentiment, context, routing)
-3. **Optional Dashboard** - SDK works standalone, dashboard adds visibility
-4. **Developer-First** - Simple API, zero-config defaults, excellent DX
-5. **Production-Ready** - Performance, security, reliability built-in
+2. **Intelligent Detection** - 3-tier hybrid approach (rule-based + local LLM + optional cloud LLM)
+3. **Modular Design** - Independent components (triggers, sentiment, context, routing)
+4. **Optional Dashboard** - SDK works standalone, dashboard adds visibility
+5. **Developer-First** - Simple API, zero-config defaults, excellent DX
+6. **Production-Ready** - Performance, security, reliability built-in
 
 ---
 
@@ -100,11 +103,25 @@ This architecture document defines the system design for HandoffKit, an open-sou
 | **Data Validation** | Pydantic | 2.5+ | Type safety, automatic validation, JSON serialization |
 | **HTTP Client** | httpx | 0.26+ | Async support, modern API, well-maintained |
 | **Testing** | pytest | 7.4+ | Industry standard, great async support |
+| **ML Framework** | transformers | 4.36+ | Hugging Face models for local LLM inference |
+| **ML Backend** | torch | 2.1+ | PyTorch for model execution (CPU-optimized) |
+
+**Installation Options:**
+```bash
+# Lightweight (rule-based only, ~5MB)
+pip install handoffkit
+
+# Standard (with local LLM, ~500MB first run for model download)
+pip install handoffkit[ml]
+
+# Full (with dashboard + local LLM)
+pip install handoffkit[ml,dashboard]
+```
 
 **Constraints:**
-- Pure Python (no compiled extensions) for maximum portability
-- Minimal dependencies for lightweight installation
-- No ML libraries in core (keeps pip install fast)
+- Core SDK works without ML dependencies (graceful degradation)
+- Local LLM models downloaded on-demand (not in package)
+- Optional cloud LLM integration (user provides API key)
 
 ### 2.2 REST API (Optional)
 
@@ -166,6 +183,342 @@ This architecture document defines the system design for HandoffKit, an open-sou
 
 ---
 
+## 2.6 LLM Integration Architecture
+
+### Overview
+
+HandoffKit uses a **3-tier detection strategy** combining rule-based, local LLM, and optional cloud LLM for optimal accuracy and performance:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    User Message                      │
+└──────────────────┬──────────────────────────────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  Tier 1: Rule-Based │  < 10ms
+        │  Keyword Matching   │
+        └──────────┬──────────┘
+                   │
+          High confidence? ──Yes──> Trigger Handoff
+                   │
+                  No (ambiguous)
+                   │
+        ┌──────────▼──────────┐
+        │  Tier 2: Local LLM  │  50-100ms
+        │  Semantic Analysis  │
+        │  (DistilBERT/BART)  │
+        └──────────┬──────────┘
+                   │
+          Confident decision? ──Yes──> Return Result
+                   │
+                  No (complex case)
+                   │
+        ┌──────────▼──────────┐
+        │  Tier 3: Cloud LLM  │  200-500ms
+        │  (Optional)         │
+        │  GPT-4o-mini/Claude │
+        └──────────┬──────────┘
+                   │
+             Return Result
+```
+
+### Tier 1: Rule-Based (Always Active)
+
+**Purpose:** Fast screening for obvious cases
+
+**Components:**
+- Critical keyword matching (fraud, emergency, etc.)
+- Direct request patterns (regex)
+- Simple sentiment scoring
+
+**Performance:** < 10ms
+**Accuracy:** ~70-80% for clear cases
+
+### Tier 2: Local LLM (Default, Enabled with `[ml]` install)
+
+**Purpose:** Semantic understanding without API costs
+
+**Models Used:**
+
+| Task | Model | Size | Speed | Accuracy |
+|------|-------|------|-------|----------|
+| **Sentiment Analysis** | `distilbert-base-uncased-finetuned-sst-2-english` | 268MB | ~50ms | ~92% |
+| **Financial Sentiment** | `ProsusAI/finbert` | 438MB | ~70ms | ~94% (banking) |
+| **Intent Classification** | `facebook/bart-large-mnli` | 1.6GB | ~100ms | ~89% (zero-shot) |
+
+**Implementation:**
+
+```python
+from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+import torch
+
+class LocalLLMDetector:
+    def __init__(self, use_gpu: bool = False):
+        device = 0 if use_gpu and torch.cuda.is_available() else -1
+
+        # Sentiment analysis (general)
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            device=device
+        )
+
+        # Financial sentiment (for banking use cases)
+        self.financial_sentiment = pipeline(
+            "sentiment-analysis",
+            model="ProsusAI/finbert",
+            device=device
+        )
+
+        # Zero-shot intent classification
+        self.intent_classifier = pipeline(
+            "zero-shot-classification",
+            model="facebook/bart-large-mnli",
+            device=device
+        )
+
+    def analyze_sentiment(self, message: str, domain: str = "general") -> float:
+        """
+        Analyze sentiment with domain-specific model.
+
+        Returns:
+            float: 0.0 (very negative) to 1.0 (very positive)
+        """
+        if domain == "financial":
+            result = self.financial_sentiment(message)[0]
+        else:
+            result = self.sentiment_analyzer(message)[0]
+
+        # Convert to 0-1 scale
+        if result['label'] in ['NEGATIVE', 'negative']:
+            return 1.0 - result['score']
+        else:
+            return result['score']
+
+    def classify_intent(self, message: str) -> tuple[str, float]:
+        """
+        Classify user intent using zero-shot classification.
+
+        Returns:
+            (intent_label, confidence)
+        """
+        candidate_labels = [
+            "request for human agent",
+            "frustrated with AI assistant",
+            "reporting fraud or security issue",
+            "asking general question",
+            "providing feedback or complaint"
+        ]
+
+        result = self.intent_classifier(
+            message,
+            candidate_labels,
+            multi_label=False
+        )
+
+        return result['labels'][0], result['scores'][0]
+
+    def detect_dangerous_content(self, message: str) -> tuple[bool, str]:
+        """
+        Detect dangerous/urgent keywords with semantic understanding.
+
+        Returns:
+            (is_dangerous, category)
+        """
+        dangerous_categories = [
+            "fraud or unauthorized access",
+            "account locked or security issue",
+            "emergency or urgent situation",
+            "legal or compliance concern",
+            "threat or harassment"
+        ]
+
+        result = self.intent_classifier(
+            message,
+            dangerous_categories,
+            multi_label=False
+        )
+
+        # Threshold: 0.5 confidence for dangerous content
+        if result['scores'][0] > 0.5:
+            return True, result['labels'][0]
+
+        return False, None
+```
+
+**Benefits:**
+- ✅ Semantic understanding (context-aware)
+- ✅ No API costs
+- ✅ Privacy (all local processing)
+- ✅ Works offline
+- ✅ Consistent latency
+
+**Trade-offs:**
+- ⚠️ Larger installation (~500MB models)
+- ⚠️ First run downloads models
+- ⚠️ CPU inference slower than cloud
+
+### Tier 3: Cloud LLM (Optional, User Opt-In)
+
+**Purpose:** Highest accuracy for complex conversations
+
+**Supported Providers:**
+- OpenAI (gpt-4o-mini, gpt-4o)
+- Anthropic (claude-3-haiku, claude-3-sonnet)
+- Custom (any OpenAI-compatible API)
+
+**Implementation:**
+
+```python
+from openai import AsyncOpenAI
+import anthropic
+
+class CloudLLMDetector:
+    def __init__(
+        self,
+        provider: str = "openai",
+        api_key: str = None,
+        model: str = "gpt-4o-mini"
+    ):
+        self.provider = provider
+        self.model = model
+
+        if provider == "openai":
+            self.client = AsyncOpenAI(api_key=api_key)
+        elif provider == "anthropic":
+            self.client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    async def analyze_conversation(
+        self,
+        conversation: List[Message],
+        check_type: str = "handoff_needed"
+    ) -> dict:
+        """
+        Deep analysis of entire conversation using cloud LLM.
+
+        Args:
+            check_type: "handoff_needed" | "sentiment" | "dangerous_content"
+        """
+
+        if check_type == "handoff_needed":
+            prompt = self._build_handoff_prompt(conversation)
+        elif check_type == "sentiment":
+            prompt = self._build_sentiment_prompt(conversation)
+        elif check_type == "dangerous_content":
+            prompt = self._build_safety_prompt(conversation)
+
+        if self.provider == "openai":
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0,  # Deterministic
+                max_tokens=200
+            )
+            return json.loads(response.choices[0].message.content)
+
+        # Similar for Anthropic...
+
+    def _build_handoff_prompt(self, conversation: List[Message]) -> str:
+        conv_text = "\n".join([
+            f"{'User' if m.speaker == 'user' else 'AI'}: {m.message}"
+            for m in conversation[-10:]  # Last 10 messages
+        ])
+
+        return f"""Analyze this conversation and determine if the user needs human assistance.
+
+Conversation:
+{conv_text}
+
+Consider:
+1. Is the user explicitly requesting human help? (variations: "talk to someone", "real person", "agent")
+2. Is the user frustrated? (sentiment, tone, escalation)
+3. Has the AI failed to help? (repeated questions, "I already told you", confusion)
+4. Are there critical issues? (fraud, security, emergency, legal)
+
+Return JSON with this exact structure:
+{{
+  "should_handoff": true/false,
+  "trigger_type": "explicit_request|frustration|repeated_failure|critical_issue|none",
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation in 1-2 sentences",
+  "urgency": "immediate|high|normal",
+  "extracted_issues": ["list of specific problems mentioned"]
+}}"""
+```
+
+**When to Use Cloud LLM:**
+- Complex multi-turn conversations
+- Subtle sentiment (sarcasm, indirect requests)
+- Context-dependent decisions
+- Legal/compliance-critical scenarios
+
+**Cost Optimization:**
+- Only call for ambiguous cases (< 10% of requests)
+- Use gpt-4o-mini ($0.15/1M tokens) not GPT-4
+- Cache results for similar conversations
+- Batch requests when possible
+
+---
+
+### Configuration
+
+```python
+# handoffkit/core/config.py
+
+class HandoffConfig(BaseModel):
+    # LLM Configuration
+    enable_local_llm: bool = True  # Tier 2
+    enable_cloud_llm: bool = False  # Tier 3
+
+    # Local LLM Settings
+    local_llm_device: str = "cpu"  # "cpu" or "cuda"
+    financial_domain: bool = False  # Use FinBERT instead of DistilBERT
+
+    # Cloud LLM Settings (optional)
+    cloud_llm_provider: Optional[str] = None  # "openai" | "anthropic"
+    cloud_llm_api_key: Optional[str] = None
+    cloud_llm_model: str = "gpt-4o-mini"
+    cloud_llm_threshold: float = 0.3  # Only use cloud if local confidence < 0.3
+
+    # Thresholds
+    sentiment_threshold: float = 0.3  # Trigger handoff if sentiment < 0.3
+    intent_confidence_threshold: float = 0.7  # Minimum confidence for local decision
+```
+
+**Usage Examples:**
+
+```python
+# Example 1: Basic (rule-based only)
+orchestrator = HandoffOrchestrator(
+    helpdesk="zendesk",
+    config=HandoffConfig(enable_local_llm=False)
+)
+
+# Example 2: Standard (with local LLM)
+orchestrator = HandoffOrchestrator(
+    helpdesk="zendesk",
+    config=HandoffConfig(
+        enable_local_llm=True,
+        financial_domain=True  # Use FinBERT for banking
+    )
+)
+
+# Example 3: Premium (with cloud LLM fallback)
+orchestrator = HandoffOrchestrator(
+    helpdesk="zendesk",
+    config=HandoffConfig(
+        enable_local_llm=True,
+        enable_cloud_llm=True,
+        cloud_llm_provider="openai",
+        cloud_llm_api_key=os.getenv("OPENAI_API_KEY"),
+        cloud_llm_threshold=0.3  # Use cloud if local confidence < 30%
+    )
+)
+```
+
+---
+
 ## 3. Core SDK Architecture
 
 ### 3.1 Package Structure
@@ -188,10 +541,11 @@ handoffkit/
 │   └── factory.py              # Trigger factory
 ├── sentiment/
 │   ├── __init__.py
-│   ├── analyzer.py             # Hybrid sentiment analyzer
-│   ├── keyword_scorer.py       # Keyword-based scoring
-│   ├── formatter_detector.py   # Caps/punctuation detection
-│   └── domain_amplifier.py     # Domain-specific amplification
+│   ├── analyzer.py             # Main sentiment analyzer (orchestrates tiers)
+│   ├── rule_based.py           # Tier 1: Rule-based sentiment
+│   ├── local_llm.py            # Tier 2: Local LLM sentiment (DistilBERT/FinBERT)
+│   ├── cloud_llm.py            # Tier 3: Cloud LLM sentiment (optional)
+│   └── models.py               # Model management and caching
 ├── context/
 │   ├── __init__.py
 │   ├── preserver.py            # Context preservation
@@ -398,10 +752,28 @@ class TriggerResult(BaseModel):
 
 class HandoffConfig(BaseModel):
     """Configuration for handoff orchestrator."""
+    # Trigger Configuration
     failure_threshold: int = Field(default=3, ge=1, le=5)
     sentiment_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
     critical_keywords: List[str] = []
     enable_test_mode: bool = False
+
+    # LLM Configuration
+    enable_local_llm: bool = True  # Tier 2: Local LLM
+    enable_cloud_llm: bool = False  # Tier 3: Cloud LLM (optional)
+
+    # Local LLM Settings
+    local_llm_device: str = "cpu"  # "cpu" or "cuda"
+    financial_domain: bool = False  # Use FinBERT instead of DistilBERT
+    intent_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+
+    # Cloud LLM Settings (optional)
+    cloud_llm_provider: Optional[str] = None  # "openai" | "anthropic"
+    cloud_llm_api_key: Optional[str] = None
+    cloud_llm_model: str = "gpt-4o-mini"
+    cloud_llm_threshold: float = Field(default=0.3, ge=0.0, le=1.0)  # Use cloud if local confidence < 0.3
+
+    # Helpdesk Configuration
     helpdesk_config: Optional[Dict] = None
 
 class HandoffResult(BaseModel):
@@ -1338,12 +1710,19 @@ class HandoffRequest(BaseModel):
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| **Trigger Evaluation** | <100ms | 95th percentile, 10 concurrent |
-| **Sentiment Analysis** | <50ms | 95th percentile |
-| **API /check** | <200ms | 95th percentile, 50 req/s |
-| **API /handoff** | <500ms | 95th percentile, 50 req/s |
+| **Trigger Evaluation (Tier 1)** | <10ms | Rule-based screening, 95th percentile |
+| **Sentiment Analysis (Tier 2)** | <100ms | Local LLM inference (DistilBERT/BART), 95th percentile |
+| **Cloud LLM Analysis (Tier 3)** | <500ms | Optional cloud API call, 95th percentile |
+| **API /check** | <150ms | With local LLM, 95th percentile, 50 req/s |
+| **API /handoff** | <600ms | With context extraction + LLM, 95th percentile, 50 req/s |
 | **WebSocket Latency** | <1 second | Event to dashboard display |
 | **Dashboard Render** | <500ms | Initial page load |
+
+**Notes:**
+- Tier 1 (rule-based) always runs first, providing fast screening
+- Tier 2 (local LLM) runs for ambiguous cases, majority of requests
+- Tier 3 (cloud LLM) only called for < 10% of requests when local confidence is low
+- Total latency depends on which tier makes final decision
 
 ### 9.2 Optimization Strategies
 
@@ -1942,42 +2321,65 @@ handoff_total.labels(trigger_type=result.trigger_type, helpdesk="zendesk").inc()
 
 ### 13.1 For Implementation Phase
 
-**Q1: Sentiment Keyword Weights**
-- Decision needed: Exact scoring weights for negative keywords
-- Approach: Start with conservative values, tune based on testing
-- Testing: A/B test different thresholds in production
+**Q1: Local LLM Model Selection per Domain**
+- Decision needed: Default model based on user's industry/domain
+- Approach: Start with DistilBERT for general, FinBERT for financial domain detection
+- Testing: Benchmark accuracy across different industries
+- Configuration: Allow users to specify domain in HandoffConfig
 
-**Q2: Entity Extraction Regex Patterns**
-- Decision needed: Comprehensive regex patterns for all entity types
-- Approach: Start with common patterns, expand based on real data
-- Consider: spaCy for ML-based extraction in V2
+**Q2: LLM Confidence Threshold Tuning**
+- Decision needed: Optimal confidence thresholds for Tier 2 → Tier 3 escalation
+- Approach: Start with 0.3 (30% confidence), tune based on production data
+- Testing: A/B test different thresholds, measure accuracy vs latency trade-off
+- Monitoring: Track escalation rates and false positive/negative rates
 
-**Q3: WebSocket Reconnection Strategy**
+**Q3: Entity Extraction Strategy**
+- Decision needed: Rule-based regex vs LLM-based entity extraction
+- Approach: Start with regex for known patterns (email, phone, account numbers)
+- Consider: Use local LLM zero-shot classification for custom entities in V2
+- Performance: Ensure entity extraction doesn't exceed 50ms
+
+**Q4: WebSocket Reconnection Strategy**
 - Decision needed: Exponential backoff parameters
 - Approach: Start with 1s delay, max 5s, infinite attempts
 - Monitoring: Track reconnection frequency and success rate
 
-**Q4: Database Migration Timing**
+**Q5: Database Migration Timing**
 - Decision needed: When to recommend SQLite → PostgreSQL migration
 - Criteria: >1000 handoffs/day or >10GB database size
 - Documentation: Step-by-step migration guide needed
 
+**Q6: Model Caching Strategy**
+- Decision needed: Keep models in memory vs reload per request
+- Approach: Load models once on startup, keep in memory (singleton pattern)
+- Memory: Monitor memory usage with multiple models loaded (~2GB for all three)
+- Optimization: Consider model quantization for lower memory footprint
+
 ### 13.2 V2 Architecture Considerations
 
-**ML-Powered Sentiment Analysis:**
-- Model: DistilBERT or FinBERT for banking domain
-- Hosting: Model served via separate service or embedded
-- Performance: Ensure <100ms inference time
+**Enhanced Local LLM Capabilities:**
+- Fine-tuned models for specific industries (healthcare, legal, retail)
+- Multi-language support (currently English-only models)
+- Custom entity extraction models
+- Performance: GPU acceleration support for high-volume deployments
 
 **Advanced Smart Routing:**
-- Skill matching algorithm design
-- Priority queue implementation
-- Load balancing strategy across agents
+- Skill matching algorithm based on conversation analysis
+- Priority queue implementation with urgency scoring
+- Load balancing strategy across agents with real-time capacity monitoring
+- Agent specialization detection and routing
 
 **Multi-tenant Architecture:**
-- Tenant isolation strategy (database per tenant vs shared schema)
-- API key scoping and permissions
+- Tenant isolation strategy (database per tenant vs shared schema with row-level security)
+- API key scoping and permissions (read-only vs full access)
 - Resource quotas and rate limiting per tenant
+- White-label dashboard customization
+
+**Conversation Analytics:**
+- Trend detection for common handoff reasons
+- Agent performance metrics and insights
+- Automated suggestions for improving AI responses
+- Anomaly detection for unusual patterns
 
 ---
 
@@ -2001,27 +2403,34 @@ Design core SDK as pure Python library with no framework dependencies. Provide o
 
 ---
 
-### ADR-002: Rule-Based Sentiment for MVP
+### ADR-002: 3-Tier LLM Detection Strategy for MVP
 
-**Status:** Accepted
+**Status:** Accepted (Revised 2025-12-25)
 
 **Context:**
-Sentiment analysis can use ML models (DistilBERT, FinBERT) or rule-based approaches. ML provides better accuracy but adds complexity and dependencies.
+Sentiment and dangerous content detection require semantic understanding, not just keyword matching. Simple rule-based approaches miss variations ("fraudulent activity" vs "fraud") and cannot understand context ("I'm not experiencing fraud" would false positive).
 
 **Decision:**
-Use hybrid rule-based sentiment analysis for MVP. Defer ML to V2.
+Implement 3-tier hybrid detection strategy for MVP:
+- Tier 1: Rule-based (always active, <10ms)
+- Tier 2: Local LLM (default with `[ml]` install, 50-100ms)
+- Tier 3: Cloud LLM (optional, user opt-in, 200-500ms)
 
 **Rationale:**
-- Faster installation (no torch dependency)
-- Simpler to tune and debug
-- Good enough accuracy for MVP validation
-- Can add ML later without breaking changes
+- Semantic understanding critical for accurate dangerous content detection
+- Local LLM balances accuracy with privacy and cost (no API fees)
+- Optional lightweight install available for users who only need rule-based
+- Cloud LLM provides highest accuracy for complex cases when needed
+- Graceful degradation if ML dependencies not installed
 
 **Consequences:**
-- ✅ Lightweight installation
-- ✅ Fast inference (<50ms)
-- ⚠️ Lower accuracy than ML models
-- ⚠️ Requires manual keyword tuning
+- ✅ High accuracy semantic detection (92-94%)
+- ✅ No API costs for standard usage (local LLM)
+- ✅ Privacy preserved (local processing)
+- ✅ Flexible installation (lightweight or full)
+- ⚠️ Larger installation with `[ml]` (~500MB model download)
+- ⚠️ First run downloads models on-demand
+- ⚠️ CPU inference slower than cloud (but acceptable at 50-100ms)
 
 ---
 
@@ -2114,11 +2523,18 @@ Use FastAPI for REST API layer.
 
 | Component | Estimated Size | Notes |
 |-----------|---------------|-------|
-| SDK Core | ~500 KB | Pure Python, minimal deps |
-| SDK with deps | ~5 MB | Including FastAPI, httpx, etc. |
+| SDK Core (lightweight) | ~500 KB | Pure Python, minimal deps |
+| SDK with deps (basic) | ~5 MB | Including FastAPI, httpx, etc. |
+| SDK with deps [ml] | ~8 MB | + transformers and torch (models downloaded separately) |
+| Local LLM models | ~500 MB | DistilBERT (268MB) + FinBERT (438MB) + BART (1.6GB) downloaded on first use |
 | Dashboard build | ~2 MB | Minified SvelteKit bundle |
 | Database (1K handoffs) | ~10 MB | SQLite file size |
 | Database (100K handoffs) | ~1 GB | PostgreSQL recommended |
+
+**Installation Size Breakdown:**
+- `pip install handoffkit` → ~5 MB (rule-based only)
+- `pip install handoffkit[ml]` → ~8 MB + 500MB-1.6GB models on first run
+- `pip install handoffkit[ml,dashboard]` → ~10 MB + models + Node.js dashboard
 
 ### 15.3 Glossary
 
