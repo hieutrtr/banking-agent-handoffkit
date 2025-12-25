@@ -55,10 +55,10 @@ workflow_status:
         note: "PRD completed with 8 functional requirements, 3 personas, 4 user journeys"
 
       - id: "create-ux-design"
-        status: "conditional"
+        status: "project-planning-artifacts/ux-design-specification.md"
         agent: "ux-designer"
         command: "/bmad:bmm:workflows:create-ux-design"
-        note: "Dashboard UI design - recommended for this project"
+        note: "Complete UX design: Terminal-inspired dark theme, GitHub/Datadog patterns, Tailwind+shadcn-svelte"
 
   # Phase 2: Solutioning
   - phase: 2
