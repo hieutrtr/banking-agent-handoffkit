@@ -1,0 +1,55 @@
+{
+  "name": "HandoffKit Dark Theme",
+  "description": "Terminal-inspired dark theme matching HandoffKit UX specification",
+  "colors": {
+    "background": "#0A0E14",
+    "surface": "#1F2937",
+    "surfaceHover": "#374151",
+    "surfaceElevated": "#4B5563",
+    "foreground": "#F9FAFB",
+    "foregroundSecondary": "#E5E7EB",
+    "foregroundTertiary": "#9CA3AF",
+    "foregroundDisabled": "#6B7280",
+    "primary": "#3B82F6",
+    "primaryHover": "#2563EB",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "danger": "#EF4444",
+    "triggerRequest": "#3B82F6",
+    "triggerSentiment": "#EF4444",
+    "triggerKeyword": "#F59E0B",
+    "triggerFailure": "#9333EA",
+    "border": "#374151",
+    "text": "#F9FAFB",
+    "textSecondary": "#9CA3AF"
+  },
+  "wireframe": {
+    "container": {
+      "backgroundColor": "#1F2937",
+      "strokeColor": "#374151",
+      "strokeWidth": 2
+    },
+    "header": {
+      "backgroundColor": "#0A0E14",
+      "strokeColor": "#374151"
+    },
+    "button": {
+      "backgroundColor": "#3B82F6",
+      "strokeColor": "#2563EB",
+      "textColor": "#F9FAFB"
+    },
+    "input": {
+      "backgroundColor": "#374151",
+      "strokeColor": "#4B5563",
+      "textColor": "#F9FAFB"
+    },
+    "card": {
+      "backgroundColor": "#1F2937",
+      "strokeColor": "#374151"
+    },
+    "text": {
+      "color": "#F9FAFB",
+      "secondaryColor": "#9CA3AF"
+    }
+  }
+}
