@@ -1,0 +1,113 @@
+# generated: 2025-12-29
+# project: handoffkit
+# project_key: handoffkit
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2025-12-29
+project: handoffkit
+project_key: handoffkit
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Project Foundation & Core SDK Architecture
+  epic-1: backlog
+  1-1-project-skeleton-and-package-structure: backlog
+  1-2-core-type-definitions-and-pydantic-models: backlog
+  1-3-handofforchestrator-base-interface: backlog
+  1-4-configuration-management-system: backlog
+  1-5-structured-logging-utilities: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Intelligent Handoff Detection
+  epic-2: backlog
+  2-1-direct-request-detection-trigger: backlog
+  2-2-failure-pattern-tracking-trigger: backlog
+  2-3-critical-keyword-monitoring-trigger: backlog
+  2-4-custom-rule-engine: backlog
+  2-5-rule-based-sentiment-scoring-tier-1: backlog
+  2-6-frustration-signal-detection-caps-and-punctuation: backlog
+  2-7-conversation-degradation-tracking: backlog
+  2-8-local-llm-sentiment-analysis-tier-2: backlog
+  2-9-optional-cloud-llm-integration-tier-3: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Context Preservation & Helpdesk Integration
+  epic-3: backlog
+  3-1-conversation-history-packaging: backlog
+  3-2-metadata-collection: backlog
+  3-3-entity-extraction: backlog
+  3-4-conversation-summarization: backlog
+  3-5-zendesk-integration-adapter: backlog
+  3-6-intercom-integration-adapter: backlog
+  3-7-generic-json-and-markdown-adapters: backlog
+  3-8-agent-availability-checking: backlog
+  3-9-round-robin-agent-distribution: backlog
+  3-10-fallback-ticket-creation: backlog
+  3-11-configurable-routing-rules: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: REST API & External Integration
+  epic-4: backlog
+  4-1-fastapi-application-setup: backlog
+  4-2-check-endpoint-post-api-v1-check: backlog
+  4-3-handoff-endpoint-post-api-v1-handoff: backlog
+  4-4-status-endpoint-get-api-v1-handoff-id: backlog
+  4-5-openapi-documentation: backlog
+  4-6-api-key-authentication: backlog
+  4-7-rate-limiting: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Real-Time Dashboard Monitoring
+  epic-5: backlog
+  5-1-sveltekit-dashboard-scaffold: backlog
+  5-2-websocket-connection-manager: backlog
+  5-3-live-handoff-feed-component: backlog
+  5-4-handoff-card-component: backlog
+  5-5-conversation-detail-view: backlog
+  5-6-filtering-controls: backlog
+  5-7-cross-browser-compatibility: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Dashboard Analytics & Configuration
+  epic-6: backlog
+  6-1-trigger-breakdown-pie-chart: backlog
+  6-2-time-range-filters-for-charts: backlog
+  6-3-drill-down-from-chart-to-feed: backlog
+  6-4-csv-export: backlog
+  6-5-failure-threshold-configuration: backlog
+  6-6-sentiment-threshold-configuration: backlog
+  6-7-critical-keywords-management: backlog
+  6-8-helpdesk-integration-configuration: backlog
+  6-9-test-mode-toggle: backlog
+  epic-6-retrospective: optional
