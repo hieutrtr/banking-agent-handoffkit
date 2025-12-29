@@ -1,29 +1,172 @@
-"""HandoffKit Core Orchestrator - Main entry point for handoff operations."""
+"""HandoffKit Core Orchestrator - Main entry point for handoff operations.
+
+This module provides the HandoffOrchestrator class which is the primary interface
+for AI-to-human handoff operations.
+
+Example usage:
+    >>> from handoffkit import HandoffOrchestrator, Message
+    >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+    >>> messages = [Message(speaker="user", content="I need help")]
+    >>> should_handoff, trigger = orchestrator.should_handoff(messages, "I need help")
+"""
 
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from handoffkit.core.config import HandoffConfig, TriggerConfig
+from handoffkit.core.types import (
+    HandoffResult,
+    HandoffStatus,
+    Message,
+    TriggerResult,
+)
+
+# Valid helpdesk provider values
+_VALID_HELPDESKS = {"zendesk", "intercom", "custom"}
 
 
 class HandoffOrchestrator:
     """Main orchestrator for AI-to-human handoff operations.
 
-    This is the primary entry point for HandoffKit functionality.
+    This is the primary entry point for HandoffKit functionality. It provides
+    methods to detect when a conversation should be handed off to a human agent
+    and to execute the handoff process.
+
+    Attributes:
+        helpdesk: The helpdesk provider to use (zendesk, intercom, custom)
+        config: The configuration for this orchestrator
+        triggers: Shortcut to config.triggers for trigger settings
+
+    Example:
+        >>> from handoffkit import HandoffOrchestrator, HandoffConfig, Message
+        >>>
+        >>> # Create with default settings
+        >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+        >>>
+        >>> # Create with custom config
+        >>> config = HandoffConfig(max_context_messages=50)
+        >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk", config=config)
+        >>>
+        >>> # Check if handoff is needed
+        >>> messages = [Message(speaker="user", content="I need help")]
+        >>> should_handoff, trigger = orchestrator.should_handoff(messages, "I need help")
+        >>>
+        >>> if should_handoff:
+        ...     result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
     """
 
-    def __init__(self, config: Optional["HandoffConfig"] = None) -> None:
-        """Initialize the orchestrator with optional configuration."""
-        self._config = config
+    def __init__(
+        self,
+        helpdesk: str = "zendesk",
+        *,
+        config: Optional[HandoffConfig] = None,
+    ) -> None:
+        """Initialize the orchestrator with helpdesk provider and optional configuration.
 
-    async def check_handoff_needed(self, message: str, context: Optional[dict[str, Any]] = None) -> "HandoffDecision":
-        """Check if a handoff to human agent is needed."""
-        raise NotImplementedError("Orchestrator implementation pending")
+        Args:
+            helpdesk: The helpdesk provider to use. Valid values are:
+                      'zendesk', 'intercom', or 'custom'. Defaults to 'zendesk'.
+            config: Optional HandoffConfig for customizing behavior.
+                   If not provided, uses default configuration.
 
-    async def execute_handoff(self, context: "ConversationContext") -> "HandoffResult":
-        """Execute the handoff to a human agent."""
-        raise NotImplementedError("Orchestrator implementation pending")
+        Raises:
+            ValueError: If helpdesk is not a valid provider value.
 
+        Example:
+            >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+            >>> orchestrator = HandoffOrchestrator(helpdesk="intercom", config=HandoffConfig())
+        """
+        # Validate helpdesk parameter
+        if helpdesk not in _VALID_HELPDESKS:
+            raise ValueError(
+                f"Invalid helpdesk value '{helpdesk}'. "
+                f"Valid options are: {', '.join(sorted(_VALID_HELPDESKS))}."
+            )
 
-# Forward references resolved at runtime
-from handoffkit.core.config import HandoffConfig
-from handoffkit.core.types import ConversationContext, HandoffDecision, HandoffResult
+        self._helpdesk = helpdesk
+        self._config = config if config is not None else HandoffConfig()
+
+    @property
+    def helpdesk(self) -> str:
+        """The helpdesk provider configured for this orchestrator."""
+        return self._helpdesk
+
+    @property
+    def config(self) -> HandoffConfig:
+        """The configuration for this orchestrator."""
+        return self._config
+
+    @property
+    def triggers(self) -> TriggerConfig:
+        """Shortcut to access trigger configuration (config.triggers)."""
+        return self._config.triggers
+
+    def should_handoff(
+        self,
+        conversation: list[Message],
+        current_message: str,
+    ) -> tuple[bool, Optional[TriggerResult]]:
+        """Check if a conversation should be handed off to a human agent.
+
+        This method evaluates the conversation history and current message
+        to determine if a handoff to a human agent is needed.
+
+        Args:
+            conversation: List of Message objects representing the conversation history.
+            current_message: The current message being evaluated.
+
+        Returns:
+            A tuple of (should_handoff, trigger_result) where:
+            - should_handoff: True if handoff is recommended, False otherwise
+            - trigger_result: TriggerResult with details if triggered, None otherwise
+
+        Note:
+            This is a stub implementation that always returns (False, None).
+            Actual trigger detection will be implemented in Epic 2.
+
+        Example:
+            >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+            >>> messages = [Message(speaker="user", content="Hello")]
+            >>> should_handoff, trigger = orchestrator.should_handoff(messages, "I want to talk to a human")
+            >>> if should_handoff:
+            ...     print(f"Handoff triggered: {trigger.reason}")
+        """
+        # Stub implementation - actual trigger detection comes in Epic 2
+        return (False, None)
+
+    def create_handoff(
+        self,
+        conversation: list[Message],
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> HandoffResult:
+        """Create a handoff to transfer the conversation to a human agent.
+
+        This method packages the conversation context and initiates a handoff
+        to the configured helpdesk system.
+
+        Args:
+            conversation: List of Message objects representing the conversation history.
+            metadata: Optional dictionary of additional metadata to include with
+                     the handoff (e.g., user_id, channel, custom fields).
+
+        Returns:
+            HandoffResult containing the outcome of the handoff attempt.
+
+        Note:
+            This is a stub implementation that returns a pending HandoffResult.
+            Actual handoff execution will be implemented in Epic 3.
+
+        Example:
+            >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+            >>> messages = [Message(speaker="user", content="I need help")]
+            >>> result = orchestrator.create_handoff(
+            ...     messages,
+            ...     metadata={"user_id": "123", "channel": "web"}
+            ... )
+            >>> print(f"Handoff status: {result.status}")
+        """
+        # Stub implementation - actual handoff execution comes in Epic 3
+        return HandoffResult(
+            success=False,
+            status=HandoffStatus.PENDING,
+            error_message="Handoff execution not yet implemented",
+        )

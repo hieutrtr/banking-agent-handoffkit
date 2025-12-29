@@ -44,7 +44,7 @@ development_status:
   epic-1: in-progress
   1-1-project-skeleton-and-package-structure: done
   1-2-core-type-definitions-and-pydantic-models: review
-  1-3-handofforchestrator-base-interface: backlog
+  1-3-handofforchestrator-base-interface: review
   1-4-configuration-management-system: backlog
   1-5-structured-logging-utilities: backlog
   epic-1-retrospective: optional
