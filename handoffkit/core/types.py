@@ -1,15 +1,46 @@
-"""HandoffKit Core Type Definitions."""
+"""HandoffKit Core Type Definitions.
+
+This module provides the core data models for HandoffKit, including:
+- Message: Represents a single message in a conversation
+- MessageSpeaker: Enum for message speaker types (user/ai)
+- ConversationContext: Complete context for handoff
+- Various result types for triggers, sentiment, and handoff operations
+
+Example usage:
+    >>> from handoffkit import Message, MessageSpeaker
+    >>> msg = Message(speaker=MessageSpeaker.USER, content="Hello")
+    >>> msg = Message(speaker="user", content="Hello")  # String also works
+"""
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _utc_now() -> datetime:
     """Return current UTC time in a timezone-aware format."""
     return datetime.now(timezone.utc)
+
+
+class MessageSpeaker(str, Enum):
+    """Speaker types for messages in a conversation.
+
+    Attributes:
+        USER: Message from the human user
+        AI: Message from the AI assistant
+        SYSTEM: System-level message (instructions, context)
+
+    Example:
+        >>> speaker = MessageSpeaker.USER
+        >>> speaker.value
+        'user'
+    """
+
+    USER = "user"
+    AI = "ai"
+    SYSTEM = "system"
 
 
 class HandoffPriority(str, Enum):
@@ -42,13 +73,89 @@ class TriggerType(str, Enum):
     CUSTOM_RULE = "custom_rule"
 
 
-class Message(BaseModel):
-    """A single message in a conversation."""
+# Mapping for backward compatibility with string inputs
+_SPEAKER_ALIASES: dict[str, MessageSpeaker] = {
+    "user": MessageSpeaker.USER,
+    "ai": MessageSpeaker.AI,
+    "assistant": MessageSpeaker.AI,  # Common alias
+    "system": MessageSpeaker.SYSTEM,
+}
 
-    role: str = Field(pattern="^(user|assistant|system)$")
-    content: str
-    timestamp: datetime = Field(default_factory=_utc_now)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+
+class Message(BaseModel):
+    """A single message in a conversation.
+
+    Attributes:
+        speaker: Who sent the message (user, ai, or system)
+        content: The message text content
+        timestamp: When the message was created (defaults to now)
+        metadata: Optional additional data about the message
+
+    Example:
+        >>> msg = Message(speaker=MessageSpeaker.USER, content="Hello!")
+        >>> msg = Message(speaker="user", content="Hello!")  # String input works too
+        >>> msg.speaker
+        <MessageSpeaker.USER: 'user'>
+
+    Raises:
+        ValidationError: If speaker is not a valid MessageSpeaker value or alias
+    """
+
+    model_config = ConfigDict(
+        validate_assignment=True,
+        str_strip_whitespace=True,
+    )
+
+    speaker: MessageSpeaker = Field(
+        description="Who sent the message: 'user', 'ai', or 'system'"
+    )
+    content: str = Field(description="The message text content")
+    timestamp: datetime = Field(
+        default_factory=_utc_now,
+        description="When the message was created",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional additional data about the message",
+    )
+
+    @field_validator("speaker", mode="before")
+    @classmethod
+    def validate_speaker(cls, v: Union[str, MessageSpeaker]) -> MessageSpeaker:
+        """Validate and coerce speaker to MessageSpeaker enum.
+
+        Accepts both MessageSpeaker enum values and string aliases
+        ('user', 'ai', 'assistant', 'system').
+
+        Args:
+            v: The speaker value to validate
+
+        Returns:
+            MessageSpeaker: The validated enum value
+
+        Raises:
+            ValueError: If the value is not a valid speaker type
+        """
+        if isinstance(v, MessageSpeaker):
+            return v
+
+        if isinstance(v, str):
+            lower_v = v.lower().strip()
+            if lower_v in _SPEAKER_ALIASES:
+                return _SPEAKER_ALIASES[lower_v]
+
+            valid_values = list(_SPEAKER_ALIASES.keys())
+            raise ValueError(
+                f"Invalid speaker value '{v}'. "
+                f"Valid options are: {', '.join(valid_values)}. "
+                f"Example: Message(speaker='user', content='Hello')"
+            )
+
+        raise ValueError(
+            f"Speaker must be a string or MessageSpeaker enum, got {type(v).__name__}. "
+            f"Valid options are: 'user', 'ai', 'assistant', 'system'. "
+            f"Example: Message(speaker=MessageSpeaker.USER, content='Hello')"
+        )
 
 
 class ConversationContext(BaseModel):

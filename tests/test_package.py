@@ -202,9 +202,10 @@ class TestPydanticModels:
     def test_message_creation(self):
         """Test Message model creation."""
         from handoffkit import Message
+        from handoffkit.core.types import MessageSpeaker
 
-        msg = Message(role="user", content="Hello")
-        assert msg.role == "user"
+        msg = Message(speaker="user", content="Hello")
+        assert msg.speaker == MessageSpeaker.USER
         assert msg.content == "Hello"
         assert msg.timestamp is not None
 
@@ -215,7 +216,7 @@ class TestPydanticModels:
         context = ConversationContext(
             conversation_id="conv-123",
             user_id="user-456",
-            messages=[Message(role="user", content="Hello")],
+            messages=[Message(speaker="user", content="Hello")],
         )
 
         assert context.conversation_id == "conv-123"
@@ -233,4 +234,4 @@ class TestPydanticModels:
 
         # Invalid config should raise ValidationError
         with pytest.raises(ValidationError):
-            TriggerConfig(failure_threshold=20)  # Max is 10
+            TriggerConfig(failure_threshold=20)  # Max is 5

@@ -3,7 +3,7 @@
 import pytest
 
 from handoffkit import HandoffConfig, HandoffOrchestrator
-from handoffkit.core.types import Message
+from handoffkit.core.types import Message, MessageSpeaker
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def orchestrator(default_config: HandoffConfig) -> HandoffOrchestrator:
 def sample_message() -> Message:
     """Create a sample user message for testing."""
     return Message(
-        role="user",
+        speaker="user",
         content="Hello, I need help with my order.",
     )
 
@@ -31,9 +31,9 @@ def sample_message() -> Message:
 def sample_messages() -> list[Message]:
     """Create a sample conversation history for testing."""
     return [
-        Message(role="user", content="Hi, I have a problem with my order."),
-        Message(role="assistant", content="I'm sorry to hear that. What seems to be the issue?"),
-        Message(role="user", content="The item arrived damaged."),
-        Message(role="assistant", content="I apologize for the inconvenience. Let me help you with that."),
-        Message(role="user", content="I want to speak to a human agent."),
+        Message(speaker="user", content="Hi, I have a problem with my order."),
+        Message(speaker="ai", content="I'm sorry to hear that. What seems to be the issue?"),
+        Message(speaker="user", content="The item arrived damaged."),
+        Message(speaker="ai", content="I apologize for the inconvenience. Let me help you with that."),
+        Message(speaker="user", content="I want to speak to a human agent."),
     ]

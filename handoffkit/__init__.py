@@ -42,6 +42,7 @@ from handoffkit.core.types import (
     HandoffResult,
     HandoffStatus,
     Message,
+    MessageSpeaker,
     SentimentResult,
     TriggerResult,
     TriggerType,
@@ -60,6 +61,7 @@ __all__ = [
     "IntegrationConfig",
     # Types
     "Message",
+    "MessageSpeaker",
     "ConversationContext",
     "TriggerResult",
     "TriggerType",
