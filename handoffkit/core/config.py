@@ -73,13 +73,18 @@ class SentimentConfig(BaseModel):
 
     Attributes:
         tier: Analysis tier to use ('rule_based', 'local_llm', 'cloud_llm')
+        sentiment_threshold: Sentiment score threshold for escalation (0.0-1.0)
         frustration_threshold: Frustration level threshold for escalation (0.0-1.0)
         escalation_threshold: Overall threshold for automatic escalation (0.0-1.0)
+        enable_local_llm: Whether to enable Tier 2 (local LLM) analysis
+        financial_domain: Whether to use FinBERT for financial domain text
 
     Example:
-        >>> config = SentimentConfig(tier="local_llm")
+        >>> config = SentimentConfig(tier="local_llm", enable_local_llm=True)
         >>> config.tier
         'local_llm'
+        >>> config.enable_local_llm
+        True
     """
 
     model_config = ConfigDict(frozen=True)
@@ -88,6 +93,12 @@ class SentimentConfig(BaseModel):
         default="rule_based",
         pattern="^(rule_based|local_llm|cloud_llm)$",
         description="Analysis tier: 'rule_based', 'local_llm', or 'cloud_llm'",
+    )
+    sentiment_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Sentiment score threshold for escalation (0.0-1.0)",
     )
     frustration_threshold: float = Field(
         default=0.7,
@@ -100,6 +111,14 @@ class SentimentConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="Overall threshold for automatic escalation (0.0-1.0)",
+    )
+    enable_local_llm: bool = Field(
+        default=False,
+        description="Enable Tier 2 (local LLM) sentiment analysis",
+    )
+    financial_domain: bool = Field(
+        default=False,
+        description="Use FinBERT for financial domain-specific sentiment analysis",
     )
 
 
