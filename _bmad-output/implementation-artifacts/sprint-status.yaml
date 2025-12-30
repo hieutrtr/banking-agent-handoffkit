@@ -53,7 +53,7 @@ development_status:
   epic-2: in-progress
   2-1-direct-request-detection-trigger: review
   2-2-failure-pattern-tracking-trigger: review
-  2-3-critical-keyword-monitoring-trigger: backlog
+  2-3-critical-keyword-monitoring-trigger: review
   2-4-custom-rule-engine: backlog
   2-5-rule-based-sentiment-scoring-tier-1: backlog
   2-6-frustration-signal-detection-caps-and-punctuation: backlog
