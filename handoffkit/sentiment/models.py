@@ -42,6 +42,15 @@ class SentimentFeatures(BaseModel):
     recent_negative_trend: float = Field(default=0.0, ge=-1.0, le=1.0)
 
 
+class DegradationResult(BaseModel):
+    """Result of conversation degradation analysis."""
+
+    is_degrading: bool
+    trend_value: float
+    window_size: int
+    scores: list[float]
+
+
 class TierPerformance(BaseModel):
     """Performance metrics for a sentiment tier."""
 

@@ -58,6 +58,7 @@ class RuleBasedAnalyzer:
         weights: Optional[dict[str, float]] = None,
         domain_keywords: Optional[list[str]] = None,
         domain_amplifier: float = 1.5,
+        degradation_tracker: Optional[Any] = None,
     ) -> None:
         """Initialize the rule-based analyzer.
 
@@ -66,11 +67,13 @@ class RuleBasedAnalyzer:
             weights: Custom keyword weights dict (optional).
             domain_keywords: Domain-specific keywords with amplified weight (optional).
             domain_amplifier: Multiplier for domain keyword impact (default 1.5).
+            degradation_tracker: Optional DegradationTracker instance for trend analysis.
         """
         self._threshold = threshold
         self._weights = {**self.DEFAULT_WEIGHTS, **(weights or {})}
         self._domain_keywords = domain_keywords or []
         self._domain_amplifier = domain_amplifier
+        self._degradation_tracker = degradation_tracker
 
         # Pre-compile regex patterns for performance
         self._strong_negative_pattern = self._compile_pattern(self.STRONG_NEGATIVE_KEYWORDS)
@@ -212,8 +215,23 @@ class RuleBasedAnalyzer:
             },
         )
 
+        # Track sentiment history if degradation tracker is enabled
+        degradation_detected = False
+        if self._degradation_tracker and history:
+            # Analyze historical user messages and track scores
+            for hist_msg in history:
+                if hist_msg.speaker == "user" or hist_msg.speaker == "USER":
+                    hist_features = self.extract_features(hist_msg)
+                    hist_score = self._calculate_score(hist_msg, hist_features)
+                    self._degradation_tracker.track_score(hist_score)
+
         # Extract features
         features = self.extract_features(message)
+
+        # Update contextual features if history provided
+        if history is not None:
+            features.conversation_length = len(history) + 1
+            features.message_position = len(history)
 
         self._logger.debug(
             "Extracted sentiment features",
@@ -229,12 +247,76 @@ class RuleBasedAnalyzer:
             },
         )
 
+        # Calculate score
+        score = self._calculate_score(message, features)
+
+        # Track current message score if degradation tracker enabled
+        if self._degradation_tracker:
+            self._degradation_tracker.track_score(score)
+
+            # Check for degradation
+            degradation_result = self._degradation_tracker.check_degradation()
+            degradation_detected = degradation_result.is_degrading
+
+            # Update contextual features with degradation trend
+            if degradation_result.window_size > 0:
+                features.recent_negative_trend = degradation_result.trend_value
+
+        # Calculate frustration level (normalized from features) - Story 2.6 enhanced
+        frustration_level = min(1.0, (
+            features.frustration_keyword_count * 0.2 +
+            features.negative_keyword_count * 0.15 +
+            features.caps_word_count * 0.1 +  # Story 2.6: per-word caps contribution
+            features.excessive_punctuation_count * 0.05 +  # Story 2.6: per-pattern contribution
+            (0.1 if features.repeated_chars else 0.0)
+        ))
+
+        # Determine escalation
+        should_escalate = score < self._threshold or degradation_detected
+
+        # Calculate processing time
+        processing_time_ms = (time.perf_counter() - start_time) * 1000
+
+        self._logger.debug(
+            "Sentiment analysis complete",
+            extra={
+                "score": round(score, 3),
+                "frustration_level": round(frustration_level, 3),
+                "should_escalate": should_escalate,
+                "degradation_detected": degradation_detected,
+                "threshold": self._threshold,
+                "processing_time_ms": round(processing_time_ms, 3),
+                "tier": "rule_based",
+            },
+        )
+
+        return SentimentResult(
+            score=score,
+            frustration_level=frustration_level,
+            should_escalate=should_escalate,
+            degradation_detected=degradation_detected,
+            tier_used="rule_based",
+            processing_time_ms=processing_time_ms,
+        )
+
+    def _calculate_score(self, message: Message, features: SentimentFeatures) -> float:
+        """Calculate sentiment score from features.
+
+        Args:
+            message: The message being analyzed.
+            features: Extracted sentiment features.
+
+        Returns:
+            Sentiment score (0.0-1.0).
+        """
+        content = message.content
+
         # Calculate base score starting from neutral 0.5
         score = 0.5
 
         # Count strong vs moderate negative separately for scoring
-        strong_neg_count = self._count_matches(self._strong_negative_pattern, message.content)
-        moderate_neg_count = self._count_matches(self._moderate_negative_pattern, message.content)
+        strong_neg_count = self._count_matches(self._strong_negative_pattern, content)
+        moderate_neg_count = self._count_matches(self._moderate_negative_pattern, content)
 
         # Apply keyword weights
         score += features.positive_keyword_count * self._weights["positive"]
@@ -253,44 +335,11 @@ class RuleBasedAnalyzer:
 
         # Domain keyword amplification
         if self._domain_pattern:
-            domain_matches = self._count_matches(self._domain_pattern, message.content)
+            domain_matches = self._count_matches(self._domain_pattern, content)
             # Domain keywords amplify the negative direction
             score -= domain_matches * 0.1 * self._domain_amplifier
 
         # Clamp to valid range [0.0, 1.0]
         score = max(0.0, min(1.0, score))
 
-        # Calculate frustration level (normalized from features) - Story 2.6 enhanced
-        frustration_level = min(1.0, (
-            features.frustration_keyword_count * 0.2 +
-            features.negative_keyword_count * 0.15 +
-            features.caps_word_count * 0.1 +  # Story 2.6: per-word caps contribution
-            features.excessive_punctuation_count * 0.05 +  # Story 2.6: per-pattern contribution
-            (0.1 if features.repeated_chars else 0.0)
-        ))
-
-        # Determine escalation
-        should_escalate = score < self._threshold
-
-        # Calculate processing time
-        processing_time_ms = (time.perf_counter() - start_time) * 1000
-
-        self._logger.debug(
-            "Sentiment analysis complete",
-            extra={
-                "score": round(score, 3),
-                "frustration_level": round(frustration_level, 3),
-                "should_escalate": should_escalate,
-                "threshold": self._threshold,
-                "processing_time_ms": round(processing_time_ms, 3),
-                "tier": "rule_based",
-            },
-        )
-
-        return SentimentResult(
-            score=score,
-            frustration_level=frustration_level,
-            should_escalate=should_escalate,
-            tier_used="rule_based",
-            processing_time_ms=processing_time_ms,
-        )
+        return score

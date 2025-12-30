@@ -70,6 +70,7 @@ class TriggerType(str, Enum):
     FAILURE_PATTERN = "failure_pattern"
     CRITICAL_KEYWORD = "critical_keyword"
     SENTIMENT_ESCALATION = "sentiment_escalation"
+    SENTIMENT_DEGRADATION = "sentiment_degradation"
     CUSTOM_RULE = "custom_rule"
 
 
@@ -189,6 +190,7 @@ class SentimentResult(BaseModel):
     should_escalate: bool = False
     tier_used: str = "rule_based"
     processing_time_ms: float = 0.0
+    degradation_detected: bool = False
 
 
 class HandoffDecision(BaseModel):
