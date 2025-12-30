@@ -50,8 +50,8 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Intelligent Handoff Detection
-  epic-2: backlog
-  2-1-direct-request-detection-trigger: backlog
+  epic-2: in-progress
+  2-1-direct-request-detection-trigger: review
   2-2-failure-pattern-tracking-trigger: backlog
   2-3-critical-keyword-monitoring-trigger: backlog
   2-4-custom-rule-engine: backlog
