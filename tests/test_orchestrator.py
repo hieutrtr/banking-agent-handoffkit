@@ -225,3 +225,76 @@ class TestOrchestratorMethodExistence:
         """Test orchestrator has triggers property."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         assert hasattr(orchestrator, "triggers")
+
+
+class TestOrchestratorFromEnv:
+    """Test HandoffOrchestrator.from_env() factory method."""
+
+    def test_from_env_returns_orchestrator(self):
+        """Test from_env returns a HandoffOrchestrator instance."""
+        orchestrator = HandoffOrchestrator.from_env()
+        assert isinstance(orchestrator, HandoffOrchestrator)
+
+    def test_from_env_with_helpdesk(self):
+        """Test from_env accepts helpdesk parameter."""
+        orchestrator = HandoffOrchestrator.from_env(helpdesk="intercom")
+        assert orchestrator.helpdesk == "intercom"
+
+    def test_from_env_default_helpdesk(self):
+        """Test from_env uses zendesk as default helpdesk."""
+        orchestrator = HandoffOrchestrator.from_env()
+        assert orchestrator.helpdesk == "zendesk"
+
+    def test_from_env_loads_env_vars(self, monkeypatch):
+        """Test from_env loads configuration from environment variables."""
+        monkeypatch.setenv("HANDOFFKIT_FAILURE_THRESHOLD", "5")
+        orchestrator = HandoffOrchestrator.from_env()
+        assert orchestrator.config.triggers.failure_threshold == 5
+
+    def test_from_env_invalid_helpdesk_raises_error(self):
+        """Test from_env with invalid helpdesk raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            HandoffOrchestrator.from_env(helpdesk="invalid")
+
+
+class TestOrchestratorFromFile:
+    """Test HandoffOrchestrator.from_file() factory method."""
+
+    def test_from_file_with_valid_file(self, tmp_path):
+        """Test from_file loads configuration from YAML file."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+triggers:
+  failure_threshold: 5
+  sentiment_threshold: 0.6
+"""
+        )
+        orchestrator = HandoffOrchestrator.from_file(str(config_file))
+        assert orchestrator.config.triggers.failure_threshold == 5
+        assert orchestrator.config.triggers.sentiment_threshold == 0.6
+
+    def test_from_file_with_helpdesk(self, tmp_path):
+        """Test from_file accepts helpdesk parameter."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("triggers:\n  failure_threshold: 2\n")
+        orchestrator = HandoffOrchestrator.from_file(str(config_file), helpdesk="intercom")
+        assert orchestrator.helpdesk == "intercom"
+
+    def test_from_file_missing_file_uses_defaults(self, tmp_path):
+        """Test from_file uses defaults when file doesn't exist."""
+        missing_file = tmp_path / "nonexistent.yaml"
+        orchestrator = HandoffOrchestrator.from_file(str(missing_file))
+        # Uses default config values
+        assert orchestrator.config.triggers.failure_threshold == 3
+
+    def test_from_file_invalid_helpdesk_raises_error(self, tmp_path):
+        """Test from_file with invalid helpdesk raises ValueError."""
+        import pytest
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("triggers:\n  failure_threshold: 2\n")
+        with pytest.raises(ValueError):
+            HandoffOrchestrator.from_file(str(config_file), helpdesk="invalid")

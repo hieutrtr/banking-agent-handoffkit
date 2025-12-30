@@ -8,11 +8,15 @@ Example usage:
     >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
     >>> messages = [Message(speaker="user", content="I need help")]
     >>> should_handoff, trigger = orchestrator.should_handoff(messages, "I need help")
+
+    # Create from environment variables and config files
+    >>> orchestrator = HandoffOrchestrator.from_env()
 """
 
 from typing import Any, Optional
 
 from handoffkit.core.config import HandoffConfig, TriggerConfig
+from handoffkit.core.config_loader import ConfigLoader, load_config
 from handoffkit.core.types import (
     HandoffResult,
     HandoffStatus,
@@ -84,6 +88,66 @@ class HandoffOrchestrator:
 
         self._helpdesk = helpdesk
         self._config = config if config is not None else HandoffConfig()
+
+    @classmethod
+    def from_env(
+        cls,
+        helpdesk: str = "zendesk",
+    ) -> "HandoffOrchestrator":
+        """Create an orchestrator with configuration from environment variables and config files.
+
+        This factory method loads configuration from environment variables (HANDOFFKIT_*)
+        and config files (handoffkit.yaml) with environment variables taking precedence.
+
+        Args:
+            helpdesk: The helpdesk provider to use. Defaults to 'zendesk'.
+
+        Returns:
+            A new HandoffOrchestrator with configuration loaded from external sources.
+
+        Raises:
+            ValueError: If helpdesk is not a valid provider value.
+            ConfigurationError: If configuration values are invalid.
+
+        Example:
+            >>> import os
+            >>> os.environ["HANDOFFKIT_FAILURE_THRESHOLD"] = "5"
+            >>> orchestrator = HandoffOrchestrator.from_env()
+            >>> orchestrator.triggers.failure_threshold
+            5
+        """
+        config = load_config()
+        return cls(helpdesk=helpdesk, config=config)
+
+    @classmethod
+    def from_file(
+        cls,
+        config_file: str,
+        helpdesk: str = "zendesk",
+    ) -> "HandoffOrchestrator":
+        """Create an orchestrator with configuration from a specific file.
+
+        This factory method loads configuration from the specified YAML config file.
+        Environment variables are NOT loaded when using this method.
+
+        Args:
+            config_file: Path to the YAML configuration file.
+            helpdesk: The helpdesk provider to use. Defaults to 'zendesk'.
+
+        Returns:
+            A new HandoffOrchestrator with configuration loaded from the file.
+
+        Raises:
+            ValueError: If helpdesk is not a valid provider value.
+            ConfigurationError: If the file cannot be read or parsed.
+
+        Example:
+            >>> orchestrator = HandoffOrchestrator.from_file("config/production.yaml")
+            >>> orchestrator.config.triggers.failure_threshold
+            5
+        """
+        config = load_config(config_file=config_file, use_env=False, use_file=True)
+        return cls(helpdesk=helpdesk, config=config)
 
     @property
     def helpdesk(self) -> str:

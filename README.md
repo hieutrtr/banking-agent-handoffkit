@@ -93,12 +93,73 @@ new_config = config.model_copy(
 )
 ```
 
+### Configuration from Environment Variables
+
+Load configuration from environment variables and YAML files:
+
+```python
+from handoffkit import HandoffOrchestrator, load_config
+
+# Load from environment variables and config files
+config = load_config()
+orchestrator = HandoffOrchestrator(helpdesk="zendesk", config=config)
+
+# Or use factory methods:
+orchestrator = HandoffOrchestrator.from_env()  # From env vars + files
+orchestrator = HandoffOrchestrator.from_file("config.yaml")  # From specific file
+```
+
+**Supported Environment Variables:**
+
+| Variable | Description | Type | Example |
+|----------|-------------|------|---------|
+| `HANDOFFKIT_FAILURE_THRESHOLD` | Consecutive failures before handoff | int | `3` |
+| `HANDOFFKIT_SENTIMENT_THRESHOLD` | Sentiment score threshold | float | `0.3` |
+| `HANDOFFKIT_CRITICAL_KEYWORDS` | Comma-separated keywords | list | `fraud,emergency` |
+| `HANDOFFKIT_HELPDESK` | Helpdesk provider | str | `zendesk` |
+| `HANDOFFKIT_API_KEY` | Integration API key | str | `key123` |
+| `HANDOFFKIT_API_URL` | Integration API URL | str | `https://api.example.com` |
+| `HANDOFFKIT_MAX_CONTEXT_MESSAGES` | Max messages in context | int | `100` |
+| `HANDOFFKIT_ROUTING_STRATEGY` | Routing strategy | str | `round_robin` |
+| `HANDOFFKIT_CONFIG_FILE` | Path to config file | str | `/path/to/config.yaml` |
+
+**YAML Configuration File:**
+
+Create `handoffkit.yaml` in your working directory:
+
+```yaml
+triggers:
+  failure_threshold: 3
+  sentiment_threshold: 0.3
+  critical_keywords:
+    - fraud
+    - emergency
+
+sentiment:
+  tier: rule_based
+
+routing:
+  strategy: round_robin
+
+integration:
+  provider: zendesk
+
+max_context_messages: 100
+```
+
+**Configuration Precedence** (highest to lowest):
+1. Explicit config passed to `HandoffOrchestrator`
+2. Environment variables (`HANDOFFKIT_*`)
+3. Config file (`handoffkit.yaml` or `handoffkit.yml`)
+4. Default values
+
 ## Features
 
 - **Framework-Agnostic**: Works with any conversational AI system (LangChain, LlamaIndex, custom)
 - **3-Tier Detection**: Rule-based + Local LLM + Optional Cloud LLM
 - **Type Safety**: Full Pydantic validation with IDE autocompletion
 - **Immutable Config**: All configuration is frozen after creation
+- **Flexible Configuration**: Environment variables, YAML files, or programmatic
 - **Context Preservation**: Maintains conversation history during handoff
 - **Multiple Integrations**: Zendesk, Intercom, and more
 - **Optional Dashboard**: Real-time monitoring and analytics

@@ -6,11 +6,22 @@ conversations from AI agents to human support representatives.
 Quick Start:
     from handoffkit import HandoffOrchestrator, HandoffConfig
 
-    orchestrator = HandoffOrchestrator(HandoffConfig())
-    decision = await orchestrator.check_handoff_needed(message, context)
+    orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+    should_handoff, trigger = orchestrator.should_handoff(messages, current_message)
 
-    if decision.should_handoff:
-        result = await orchestrator.execute_handoff(conversation_context)
+    if should_handoff:
+        result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
+
+Configuration from Environment/File:
+    # Load config from environment variables and config files
+    from handoffkit import load_config, HandoffOrchestrator
+
+    config = load_config()
+    orchestrator = HandoffOrchestrator(helpdesk="zendesk", config=config)
+
+    # Or use factory methods:
+    orchestrator = HandoffOrchestrator.from_env()
+    orchestrator = HandoffOrchestrator.from_file("config.yaml")
 """
 
 __version__ = "0.1.0"
@@ -23,6 +34,7 @@ from handoffkit.core.config import (
     SentimentConfig,
     TriggerConfig,
 )
+from handoffkit.core.config_loader import ConfigLoader, load_config
 from handoffkit.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -59,6 +71,9 @@ __all__ = [
     "SentimentConfig",
     "RoutingConfig",
     "IntegrationConfig",
+    # Configuration loading
+    "ConfigLoader",
+    "load_config",
     # Types
     "Message",
     "MessageSpeaker",
