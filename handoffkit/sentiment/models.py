@@ -27,6 +27,10 @@ class SentimentFeatures(BaseModel):
     question_count: int = 0
     caps_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    # Frustration signal features (Story 2.6)
+    caps_word_count: int = 0  # Count of ALL CAPS words (2+ chars)
+    excessive_punctuation_count: int = 0  # Count of 3+ consecutive ! or ? patterns
+
     # Pattern features
     repeated_chars: bool = False
     contains_profanity: bool = False

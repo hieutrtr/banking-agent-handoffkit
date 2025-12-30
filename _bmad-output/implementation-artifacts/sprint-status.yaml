@@ -56,7 +56,7 @@ development_status:
   2-3-critical-keyword-monitoring-trigger: review
   2-4-custom-rule-engine: review
   2-5-rule-based-sentiment-scoring-tier-1: review
-  2-6-frustration-signal-detection-caps-and-punctuation: backlog
+  2-6-frustration-signal-detection-caps-and-punctuation: review
   2-7-conversation-degradation-tracking: backlog
   2-8-local-llm-sentiment-analysis-tier-2: backlog
   2-9-optional-cloud-llm-integration-tier-3: backlog

@@ -86,6 +86,9 @@ class RuleBasedAnalyzer:
         # Pattern for repeated characters (3+ of same char)
         self._repeated_chars_pattern = re.compile(r"(.)\1{2,}")
 
+        # Pattern for excessive punctuation (3+ consecutive ! or ?)
+        self._excessive_punct_pattern = re.compile(r"[!?]{3,}")
+
         # Domain keywords pattern if provided
         if self._domain_keywords:
             self._domain_pattern = self._compile_pattern(self._domain_keywords)
@@ -106,6 +109,18 @@ class RuleBasedAnalyzer:
     def _count_matches(self, pattern: re.Pattern[str], text: str) -> int:
         """Count pattern matches in text."""
         return len(pattern.findall(text))
+
+    def _count_caps_words(self, text: str) -> int:
+        """Count ALL CAPS words (2+ characters, entirely uppercase).
+
+        Args:
+            text: The text to analyze.
+
+        Returns:
+            Number of ALL CAPS words found.
+        """
+        words = re.findall(r"\b[A-Za-z]+\b", text)
+        return sum(1 for word in words if len(word) >= 2 and word.isupper())
 
     def extract_features(self, message: Message) -> SentimentFeatures:
         """Extract sentiment features from a message.
@@ -141,6 +156,12 @@ class RuleBasedAnalyzer:
         # Detect repeated characters (3+ consecutive same char)
         repeated_chars = bool(self._repeated_chars_pattern.search(content))
 
+        # Count ALL CAPS words (Story 2.6)
+        caps_word_count = self._count_caps_words(content)
+
+        # Count excessive punctuation patterns (3+ consecutive ! or ?)
+        excessive_punctuation_count = len(self._excessive_punct_pattern.findall(content))
+
         # Message length
         message_length = len(content)
 
@@ -151,6 +172,8 @@ class RuleBasedAnalyzer:
             exclamation_count=exclamation_count,
             question_count=question_count,
             caps_ratio=caps_ratio,
+            caps_word_count=caps_word_count,
+            excessive_punctuation_count=excessive_punctuation_count,
             repeated_chars=repeated_chars,
             contains_profanity=False,  # Not implemented for Tier 1
             message_length=message_length,
@@ -199,6 +222,8 @@ class RuleBasedAnalyzer:
                 "positive_count": features.positive_keyword_count,
                 "frustration_count": features.frustration_keyword_count,
                 "caps_ratio": round(features.caps_ratio, 2),
+                "caps_word_count": features.caps_word_count,
+                "excessive_punctuation_count": features.excessive_punctuation_count,
                 "exclamation_count": features.exclamation_count,
                 "repeated_chars": features.repeated_chars,
             },
@@ -217,12 +242,14 @@ class RuleBasedAnalyzer:
         score -= moderate_neg_count * abs(self._weights["moderate_negative"])
         score -= features.frustration_keyword_count * abs(self._weights["frustration"])
 
-        # Apply modifiers for caps and punctuation
-        if features.caps_ratio > 0.5:
-            score -= 0.1  # ALL CAPS penalty
+        # Apply modifiers for caps and punctuation (Story 2.6 enhancement)
+        # Per-word caps penalty: -0.1 per ALL CAPS word, max -0.3
+        caps_penalty = min(features.caps_word_count * 0.1, 0.3)
+        score -= caps_penalty
 
-        if features.exclamation_count > 2:
-            score -= 0.05 * (features.exclamation_count - 2)  # Excessive punctuation
+        # Per-pattern excessive punctuation penalty: -0.05 per 3+ consecutive !/?
+        punct_penalty = min(features.excessive_punctuation_count * 0.05, 0.2)
+        score -= punct_penalty
 
         # Domain keyword amplification
         if self._domain_pattern:
@@ -233,11 +260,12 @@ class RuleBasedAnalyzer:
         # Clamp to valid range [0.0, 1.0]
         score = max(0.0, min(1.0, score))
 
-        # Calculate frustration level (normalized from features)
+        # Calculate frustration level (normalized from features) - Story 2.6 enhanced
         frustration_level = min(1.0, (
             features.frustration_keyword_count * 0.2 +
             features.negative_keyword_count * 0.15 +
-            (0.2 if features.caps_ratio > 0.5 else 0.0) +
+            features.caps_word_count * 0.1 +  # Story 2.6: per-word caps contribution
+            features.excessive_punctuation_count * 0.05 +  # Story 2.6: per-pattern contribution
             (0.1 if features.repeated_chars else 0.0)
         ))
 
