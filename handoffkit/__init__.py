@@ -22,6 +22,16 @@ Configuration from Environment/File:
     # Or use factory methods:
     orchestrator = HandoffOrchestrator.from_env()
     orchestrator = HandoffOrchestrator.from_file("config.yaml")
+
+Logging Configuration:
+    from handoffkit import setup_logging, get_logger
+
+    # Configure logging (auto-configured on first orchestrator use)
+    setup_logging()  # Uses LOG_LEVEL and LOG_FORMAT env vars
+
+    # Get a logger for custom components
+    logger = get_logger("my_component")
+    logger.info("Custom message", extra={"user_id": "123"})
 """
 
 __version__ = "0.1.0"
@@ -59,6 +69,7 @@ from handoffkit.core.types import (
     TriggerResult,
     TriggerType,
 )
+from handoffkit.utils.logging import get_logger, setup_logging
 
 __all__ = [
     # Version
@@ -74,6 +85,9 @@ __all__ = [
     # Configuration loading
     "ConfigLoader",
     "load_config",
+    # Logging
+    "setup_logging",
+    "get_logger",
     # Types
     "Message",
     "MessageSpeaker",

@@ -13,6 +13,7 @@ Example usage:
     >>> orchestrator = HandoffOrchestrator.from_env()
 """
 
+import logging
 from typing import Any, Optional
 
 from handoffkit.core.config import HandoffConfig, TriggerConfig
@@ -23,6 +24,7 @@ from handoffkit.core.types import (
     Message,
     TriggerResult,
 )
+from handoffkit.utils.logging import get_logger, log_with_context
 
 # Valid helpdesk provider values
 _VALID_HELPDESKS = {"zendesk", "intercom", "custom"}
@@ -88,6 +90,16 @@ class HandoffOrchestrator:
 
         self._helpdesk = helpdesk
         self._config = config if config is not None else HandoffConfig()
+        self._logger = get_logger("orchestrator")
+
+        # Log initialization at DEBUG level
+        self._logger.debug(
+            "Orchestrator initialized",
+            extra={
+                "helpdesk": self._helpdesk,
+                "trigger_type": "initialization",
+            },
+        )
 
     @classmethod
     def from_env(
@@ -194,8 +206,33 @@ class HandoffOrchestrator:
             >>> if should_handoff:
             ...     print(f"Handoff triggered: {trigger.reason}")
         """
+        # Log the should_handoff call at DEBUG level
+        message_preview = (
+            current_message[:50] + "..." if len(current_message) > 50 else current_message
+        )
+        self._logger.debug(
+            "Evaluating handoff decision",
+            extra={
+                "conversation_length": len(conversation),
+                "message_preview": message_preview,
+            },
+        )
+
         # Stub implementation - actual trigger detection comes in Epic 2
-        return (False, None)
+        result = (False, None)
+
+        # Log the decision at INFO level
+        self._logger.info(
+            "Handoff decision made",
+            extra={
+                "should_handoff": result[0],
+                "trigger_type": result[1].trigger_type if result[1] else None,
+                "confidence": result[1].confidence if result[1] else None,
+                "conversation_length": len(conversation),
+            },
+        )
+
+        return result
 
     def create_handoff(
         self,
@@ -228,9 +265,36 @@ class HandoffOrchestrator:
             ... )
             >>> print(f"Handoff status: {result.status}")
         """
+        # Extract user_id from metadata for logging
+        user_id = metadata.get("user_id") if metadata else None
+
+        # Log the create_handoff call at INFO level
+        self._logger.info(
+            "Creating handoff",
+            extra={
+                "conversation_length": len(conversation),
+                "user_id": user_id,
+                "helpdesk": self._helpdesk,
+                "metadata_keys": list(metadata.keys()) if metadata else [],
+            },
+        )
+
         # Stub implementation - actual handoff execution comes in Epic 3
-        return HandoffResult(
+        result = HandoffResult(
             success=False,
             status=HandoffStatus.PENDING,
             error_message="Handoff execution not yet implemented",
         )
+
+        # Log the result
+        self._logger.info(
+            "Handoff created",
+            extra={
+                "handoff_id": result.handoff_id,
+                "status": result.status.value if result.status else None,
+                "success": result.success,
+                "helpdesk": self._helpdesk,
+            },
+        )
+
+        return result

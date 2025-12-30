@@ -46,7 +46,7 @@ development_status:
   1-2-core-type-definitions-and-pydantic-models: review
   1-3-handofforchestrator-base-interface: review
   1-4-configuration-management-system: review
-  1-5-structured-logging-utilities: backlog
+  1-5-structured-logging-utilities: review
   epic-1-retrospective: optional
 
   # Epic 2: Intelligent Handoff Detection
