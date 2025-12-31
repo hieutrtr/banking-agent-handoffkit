@@ -37,7 +37,12 @@ Logging Configuration:
 __version__ = "0.1.0"
 
 # Core exports
-from handoffkit.context import ConversationPackage, ConversationPackager
+from handoffkit.context import (
+    ConversationMetadata,
+    ConversationPackage,
+    ConversationPackager,
+    MetadataCollector,
+)
 from handoffkit.core.config import (
     HandoffConfig,
     IntegrationConfig,
@@ -103,6 +108,8 @@ __all__ = [
     # Context packaging
     "ConversationPackager",
     "ConversationPackage",
+    "MetadataCollector",
+    "ConversationMetadata",
     # Exceptions
     "HandoffKitError",
     "ConfigurationError",

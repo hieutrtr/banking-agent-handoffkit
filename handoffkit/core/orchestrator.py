@@ -95,11 +95,14 @@ class HandoffOrchestrator:
         # Initialize ConversationPackager for context preservation
         # Late import to avoid circular dependency
         from handoffkit.context.packager import ConversationPackager
+        from handoffkit.context.metadata import MetadataCollector
 
         self._context_packager = ConversationPackager(
             max_messages=self._config.max_context_messages,
             max_size_kb=self._config.max_context_size_kb,
         )
+
+        self._metadata_collector = MetadataCollector()
 
         # Log initialization at DEBUG level
         self._logger.debug(
@@ -291,12 +294,18 @@ class HandoffOrchestrator:
         # Package conversation history
         conversation_package = self._context_packager.package_conversation(conversation)
 
+        # Collect metadata
+        conversation_metadata = self._metadata_collector.collect_metadata(
+            conversation, metadata or {}
+        )
+
         # Initialize metadata if None
         if metadata is None:
             metadata = {}
 
-        # Include packaged conversation in metadata
+        # Include packaged conversation and metadata
         metadata["conversation_package"] = conversation_package.model_dump()
+        metadata["conversation_metadata"] = conversation_metadata.to_dict()
 
         # Stub implementation - actual handoff execution comes in Epic 3
         result = HandoffResult(
