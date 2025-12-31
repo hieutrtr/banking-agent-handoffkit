@@ -92,6 +92,15 @@ class HandoffOrchestrator:
         self._config = config if config is not None else HandoffConfig()
         self._logger = get_logger("orchestrator")
 
+        # Initialize ConversationPackager for context preservation
+        # Late import to avoid circular dependency
+        from handoffkit.context.packager import ConversationPackager
+
+        self._context_packager = ConversationPackager(
+            max_messages=self._config.max_context_messages,
+            max_size_kb=self._config.max_context_size_kb,
+        )
+
         # Log initialization at DEBUG level
         self._logger.debug(
             "Orchestrator initialized",
@@ -279,11 +288,22 @@ class HandoffOrchestrator:
             },
         )
 
+        # Package conversation history
+        conversation_package = self._context_packager.package_conversation(conversation)
+
+        # Initialize metadata if None
+        if metadata is None:
+            metadata = {}
+
+        # Include packaged conversation in metadata
+        metadata["conversation_package"] = conversation_package.model_dump()
+
         # Stub implementation - actual handoff execution comes in Epic 3
         result = HandoffResult(
             success=False,
             status=HandoffStatus.PENDING,
             error_message="Handoff execution not yet implemented",
+            metadata=metadata,
         )
 
         # Log the result
