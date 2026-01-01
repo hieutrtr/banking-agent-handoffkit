@@ -201,4 +201,5 @@ class MetadataCollector:
             return 0
 
         duration = (last_timestamp - first_timestamp).total_seconds()
-        return int(duration)
+        # Handle negative duration (clock skew or out-of-order messages)
+        return max(0, int(duration))

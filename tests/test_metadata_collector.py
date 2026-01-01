@@ -1,5 +1,6 @@
 """Tests for MetadataCollector class."""
 
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -414,3 +415,110 @@ class TestMetadataCollectorEdgeCases:
         # Should only have last 5 failed queries
         assert len(result.failed_queries) == 5
         assert "Question 9" in result.failed_queries[-1]
+
+    def test_negative_duration_returns_zero(self):
+        """Test that negative duration (clock skew) returns 0."""
+        collector = MetadataCollector()
+
+        # First message has later timestamp than last (clock skew)
+        messages = [
+            Message(
+                speaker=MessageSpeaker.USER,
+                content="Hello",
+                timestamp=datetime(2024, 1, 1, 12, 10, 0, tzinfo=timezone.utc),  # Later
+            ),
+            Message(
+                speaker=MessageSpeaker.AI,
+                content="Hi there!",
+                timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),  # Earlier
+            ),
+        ]
+
+        provided_metadata = {"user_id": "user123"}
+
+        result = collector.collect_metadata(messages, provided_metadata)
+
+        # Should return 0 instead of negative duration
+        assert result.conversation_duration == 0
+
+    def test_system_messages_ignored_in_solutions(self):
+        """Test that SYSTEM messages are not included in attempted_solutions."""
+        collector = MetadataCollector()
+
+        messages = [
+            Message(
+                speaker=MessageSpeaker.USER,
+                content="Hello",
+                timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            ),
+            Message(
+                speaker=MessageSpeaker.SYSTEM,
+                content="You can try resetting the conversation",  # Contains solution keyword
+                timestamp=datetime(2024, 1, 1, 12, 0, 5, tzinfo=timezone.utc),
+            ),
+            Message(
+                speaker=MessageSpeaker.AI,
+                content="How can I help you?",
+                timestamp=datetime(2024, 1, 1, 12, 0, 10, tzinfo=timezone.utc),
+            ),
+        ]
+
+        provided_metadata = {"user_id": "user123"}
+
+        result = collector.collect_metadata(messages, provided_metadata)
+
+        # SYSTEM message should be ignored - only AI messages checked
+        assert result.attempted_solutions == []
+
+    def test_failed_query_truncation_to_200_chars(self):
+        """Test that long failed query messages are truncated to 200 chars."""
+        collector = MetadataCollector()
+
+        long_question = "Can you help with " + "x" * 500 + "?"
+
+        messages = [
+            Message(
+                speaker=MessageSpeaker.USER,
+                content=long_question,
+                timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            ),
+            Message(
+                speaker=MessageSpeaker.AI,
+                content="I don't know how to help with that",
+                timestamp=datetime(2024, 1, 1, 12, 0, 10, tzinfo=timezone.utc),
+            ),
+        ]
+
+        provided_metadata = {"user_id": "user123"}
+
+        result = collector.collect_metadata(messages, provided_metadata)
+
+        assert len(result.failed_queries) == 1
+        assert len(result.failed_queries[0]) <= 200
+
+    def test_performance_under_50ms(self):
+        """Test that metadata collection completes in under 50ms.
+
+        Requirement: Performance Requirements specify <20ms.
+        We use 50ms threshold to avoid CI flakiness.
+        """
+        collector = MetadataCollector()
+
+        # Create realistic conversation with 50 messages
+        messages = []
+        for i in range(50):
+            messages.append(
+                Message(
+                    speaker=MessageSpeaker.USER if i % 2 == 0 else MessageSpeaker.AI,
+                    content=f"This is message {i} with some reasonable content. You can try this solution. What about this question?",
+                    timestamp=datetime(2024, 1, 1, 12, i, 0, tzinfo=timezone.utc),
+                )
+            )
+
+        provided_metadata = {"user_id": "user123", "channel": "web"}
+
+        start_time = time.perf_counter()
+        _ = collector.collect_metadata(messages, provided_metadata)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        assert elapsed_ms < 50, f"Metadata collection took {elapsed_ms:.2f}ms, expected <50ms"
