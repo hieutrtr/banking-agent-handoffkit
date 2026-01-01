@@ -41,6 +41,9 @@ from handoffkit.context import (
     ConversationMetadata,
     ConversationPackage,
     ConversationPackager,
+    EntityExtractor,
+    EntityType,
+    ExtractedEntity,
     MetadataCollector,
 )
 from handoffkit.core.config import (
@@ -110,6 +113,10 @@ __all__ = [
     "ConversationPackage",
     "MetadataCollector",
     "ConversationMetadata",
+    # Entity extraction
+    "EntityExtractor",
+    "EntityType",
+    "ExtractedEntity",
     # Exceptions
     "HandoffKitError",
     "ConfigurationError",

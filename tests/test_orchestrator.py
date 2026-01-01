@@ -195,6 +195,23 @@ class TestCreateHandoffMethod:
         result = orchestrator.create_handoff([])
         assert isinstance(result, HandoffResult)
 
+    def test_create_handoff_extracts_entities(self):
+        """Test create_handoff includes extracted entities in metadata."""
+        orchestrator = HandoffOrchestrator(helpdesk="zendesk")
+        messages = [
+            Message(
+                speaker="user",
+                content="My account is 12345678 and I was charged $500"
+            )
+        ]
+        result = orchestrator.create_handoff(messages)
+        assert isinstance(result, HandoffResult)
+        # Check extracted_entities in metadata
+        assert "extracted_entities" in result.metadata
+        assert isinstance(result.metadata["extracted_entities"], list)
+        # Should have at least account number and currency
+        assert len(result.metadata["extracted_entities"]) >= 2
+
 
 class TestOrchestratorMethodExistence:
     """Test that required methods exist on HandoffOrchestrator."""

@@ -66,7 +66,7 @@ development_status:
   epic-3: in-progress
   3-1-conversation-history-packaging: review
   3-2-metadata-collection: review
-  3-3-entity-extraction: backlog
+  3-3-entity-extraction: done
   3-4-conversation-summarization: backlog
   3-5-zendesk-integration-adapter: backlog
   3-6-intercom-integration-adapter: backlog

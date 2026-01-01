@@ -2,9 +2,84 @@
 
 import json
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+class EntityType(str, Enum):
+    """Types of extractable entities from conversations.
+
+    Attributes:
+        ACCOUNT_NUMBER: Bank account or reference numbers
+        CURRENCY: Monetary amounts with currency
+        DATE: Absolute or relative dates
+        EMAIL: Email addresses
+        PHONE: Phone numbers
+        NAME: Person names
+
+    Example:
+        >>> EntityType.ACCOUNT_NUMBER.value
+        'account_number'
+    """
+
+    ACCOUNT_NUMBER = "account_number"
+    CURRENCY = "currency"
+    DATE = "date"
+    EMAIL = "email"
+    PHONE = "phone"
+    NAME = "name"
+
+
+class ExtractedEntity(BaseModel):
+    """Extracted entity from conversation.
+
+    Represents a single entity (account number, currency, date, etc.)
+    extracted from a conversation message with position and masking info.
+
+    Attributes:
+        entity_type: Type of entity (from EntityType enum)
+        original_value: Original text as found in the message
+        masked_value: Masked value for PII protection (e.g., ****5678)
+        normalized_value: Parsed/normalized value (e.g., ISO date, float amount)
+        message_index: Index of the message containing this entity
+        start_pos: Start position of entity in the message
+        end_pos: End position of entity in the message
+
+    Example:
+        >>> entity = ExtractedEntity(
+        ...     entity_type=EntityType.ACCOUNT_NUMBER,
+        ...     original_value="12345678",
+        ...     masked_value="****5678",
+        ...     normalized_value=None,
+        ...     message_index=0,
+        ...     start_pos=15,
+        ...     end_pos=23
+        ... )
+        >>> entity.to_dict()
+        {'entity_type': 'account_number', ...}
+    """
+
+    entity_type: EntityType = Field(description="Type of entity")
+    original_value: str = Field(description="Original text as found")
+    masked_value: Optional[str] = Field(None, description="Masked value for PII")
+    normalized_value: Optional[str] = Field(None, description="Normalized/parsed value")
+    message_index: int = Field(description="Index of message containing entity")
+    start_pos: int = Field(description="Start position in message")
+    end_pos: int = Field(description="End position in message")
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization.
+
+        Returns:
+            Dictionary with all fields serialized to JSON-compatible types
+
+        Example:
+            >>> entity.to_dict()
+            {'entity_type': 'account_number', 'original_value': '12345678', ...}
+        """
+        return self.model_dump(mode="json")
 
 
 class ConversationPackage(BaseModel):
