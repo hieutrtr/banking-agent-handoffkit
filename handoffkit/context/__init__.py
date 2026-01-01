@@ -11,10 +11,9 @@ from handoffkit.context.models import (
     EntityType,
     ExtractedEntity,
 )
-from handoffkit.context.packager import ContextPackager, ConversationPackager
+from handoffkit.context.packager import ConversationPackager
 
 __all__ = [
-    "ContextPackager",
     "ConversationPackager",
     "ConversationPackage",
     "EntityExtractor",

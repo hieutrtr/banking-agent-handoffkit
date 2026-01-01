@@ -109,14 +109,14 @@ class TestSubpackageImports:
 
     def test_import_context(self):
         """Test context subpackage imports."""
-        from handoffkit.context import ContextPackager
+        from handoffkit.context import ConversationPackager
         from handoffkit.context.adapters import (
             BaseAdapter,
             JSONAdapter,
             MarkdownAdapter,
         )
 
-        assert ContextPackager is not None
+        assert ConversationPackager is not None
         assert JSONAdapter is not None
 
     def test_import_routing(self):
