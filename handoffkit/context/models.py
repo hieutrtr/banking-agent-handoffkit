@@ -203,3 +203,55 @@ class ConversationMetadata(BaseModel):
             {'user_id': 'user123', ...}
         """
         return self.model_dump(mode="json")
+
+
+class ConversationSummary(BaseModel):
+    """Summary of conversation for handoff context.
+
+    This model captures a concise AI-generated summary of the conversation
+    including the primary issue, attempted solutions, and current status.
+
+    Attributes:
+        summary_text: Full formatted summary text
+        issue: Primary issue identified from the conversation
+        attempted_solutions: List of solutions that were attempted
+        current_status: Current state (resolved/unresolved/awaiting_response)
+        word_count: Total word count of the summary
+        generation_time_ms: Time to generate the summary in milliseconds
+
+    Example:
+        >>> summary = ConversationSummary(
+        ...     summary_text="Issue: Payment failed. Tried: Reset card. Status: Unresolved.",
+        ...     issue="Payment failed",
+        ...     attempted_solutions=["Reset card"],
+        ...     current_status="unresolved",
+        ...     word_count=10,
+        ...     generation_time_ms=5.2
+        ... )
+        >>> summary.to_dict()
+        {'summary_text': 'Issue: Payment failed...', ...}
+    """
+
+    summary_text: str = Field(description="Full formatted summary text")
+    issue: str = Field(description="Primary issue identified")
+    attempted_solutions: list[str] = Field(
+        default_factory=list,
+        description="List of solutions attempted",
+    )
+    current_status: str = Field(
+        description="Current state: resolved/unresolved/awaiting_response"
+    )
+    word_count: int = Field(description="Total word count of summary")
+    generation_time_ms: float = Field(description="Time to generate in milliseconds")
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization.
+
+        Returns:
+            Dictionary with all fields serialized to JSON-compatible types
+
+        Example:
+            >>> summary.to_dict()
+            {'summary_text': '...', 'issue': '...', ...}
+        """
+        return self.model_dump(mode="json")

@@ -41,6 +41,8 @@ from handoffkit.context import (
     ConversationMetadata,
     ConversationPackage,
     ConversationPackager,
+    ConversationSummarizer,
+    ConversationSummary,
     EntityExtractor,
     EntityType,
     ExtractedEntity,
@@ -111,6 +113,8 @@ __all__ = [
     # Context packaging
     "ConversationPackager",
     "ConversationPackage",
+    "ConversationSummarizer",
+    "ConversationSummary",
     "MetadataCollector",
     "ConversationMetadata",
     # Entity extraction

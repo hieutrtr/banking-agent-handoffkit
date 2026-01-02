@@ -96,6 +96,7 @@ class HandoffOrchestrator:
         from handoffkit.context.packager import ConversationPackager
         from handoffkit.context.metadata import MetadataCollector
         from handoffkit.context.entity_extractor import EntityExtractor
+        from handoffkit.context.summarizer import ConversationSummarizer
 
         self._context_packager = ConversationPackager(
             max_messages=self._config.max_context_messages,
@@ -104,6 +105,9 @@ class HandoffOrchestrator:
 
         self._metadata_collector = MetadataCollector()
         self._entity_extractor = EntityExtractor()
+        self._summarizer = ConversationSummarizer(
+            max_words=self._config.summary_max_words
+        )
 
         # Log initialization at DEBUG level
         self._logger.debug(
@@ -303,14 +307,18 @@ class HandoffOrchestrator:
         # Extract entities from conversation
         extracted_entities = self._entity_extractor.extract_entities(conversation)
 
+        # Generate conversation summary
+        conversation_summary = self._summarizer.summarize(conversation)
+
         # Initialize metadata if None
         if metadata is None:
             metadata = {}
 
-        # Include packaged conversation, metadata, and extracted entities
+        # Include packaged conversation, metadata, extracted entities, and summary
         metadata["conversation_package"] = conversation_package.model_dump()
         metadata["conversation_metadata"] = conversation_metadata.to_dict()
         metadata["extracted_entities"] = [e.to_dict() for e in extracted_entities]
+        metadata["conversation_summary"] = conversation_summary.to_dict()
 
         # Stub implementation - actual handoff execution comes in Epic 3
         result = HandoffResult(
