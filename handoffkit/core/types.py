@@ -61,6 +61,7 @@ class HandoffStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
     CANCELLED = "cancelled"
+    FAILED = "failed"  # Error status when ticket creation fails (AC#2)
 
 
 class TriggerType(str, Enum):

@@ -159,43 +159,49 @@ class TestShouldHandoffMethod:
 class TestCreateHandoffMethod:
     """Test create_handoff() method functionality."""
 
-    def test_create_handoff_returns_handoff_result(self):
+    @pytest.mark.asyncio
+    async def test_create_handoff_returns_handoff_result(self):
         """Test create_handoff returns a HandoffResult."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         messages = [Message(speaker="user", content="I need help")]
-        result = orchestrator.create_handoff(messages)
+        result = await orchestrator.create_handoff(messages)
         assert isinstance(result, HandoffResult)
 
-    def test_create_handoff_with_metadata(self):
+    @pytest.mark.asyncio
+    async def test_create_handoff_with_metadata(self):
         """Test create_handoff accepts metadata parameter."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         messages = [Message(speaker="user", content="I need help")]
         metadata = {"user_id": "123", "channel": "web"}
-        result = orchestrator.create_handoff(messages, metadata=metadata)
+        result = await orchestrator.create_handoff(messages, metadata=metadata)
         assert isinstance(result, HandoffResult)
 
-    def test_create_handoff_without_metadata(self):
+    @pytest.mark.asyncio
+    async def test_create_handoff_without_metadata(self):
         """Test create_handoff works without metadata."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         messages = [Message(speaker="user", content="Help please")]
-        result = orchestrator.create_handoff(messages)
+        result = await orchestrator.create_handoff(messages)
         assert isinstance(result, HandoffResult)
 
-    def test_create_handoff_returns_pending_status(self):
-        """Test create_handoff returns pending result (stub implementation)."""
+    @pytest.mark.asyncio
+    async def test_create_handoff_returns_pending_status(self):
+        """Test create_handoff returns pending result when no integration configured."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         messages = [Message(speaker="user", content="I need help")]
-        result = orchestrator.create_handoff(messages)
-        # Stub implementation returns pending status
+        result = await orchestrator.create_handoff(messages)
+        # Without Zendesk credentials, returns pending status
         assert result.success is False or result.status.value == "pending"
 
-    def test_create_handoff_with_empty_conversation(self):
+    @pytest.mark.asyncio
+    async def test_create_handoff_with_empty_conversation(self):
         """Test create_handoff with empty conversation."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
-        result = orchestrator.create_handoff([])
+        result = await orchestrator.create_handoff([])
         assert isinstance(result, HandoffResult)
 
-    def test_create_handoff_extracts_entities(self):
+    @pytest.mark.asyncio
+    async def test_create_handoff_extracts_entities(self):
         """Test create_handoff includes extracted entities in metadata."""
         orchestrator = HandoffOrchestrator(helpdesk="zendesk")
         messages = [
@@ -204,7 +210,7 @@ class TestCreateHandoffMethod:
                 content="My account is 12345678 and I was charged $500"
             )
         ]
-        result = orchestrator.create_handoff(messages)
+        result = await orchestrator.create_handoff(messages)
         assert isinstance(result, HandoffResult)
         # Check extracted_entities in metadata
         assert "extracted_entities" in result.metadata

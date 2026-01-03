@@ -2,10 +2,13 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
 from handoffkit import HandoffOrchestrator, Message
 
 
-def test_orchestrator_collects_metadata_in_handoff():
+@pytest.mark.asyncio
+async def test_orchestrator_collects_metadata_in_handoff():
     """Test that HandoffOrchestrator collects conversation metadata."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -22,7 +25,7 @@ def test_orchestrator_collects_metadata_in_handoff():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
+    result = await orchestrator.create_handoff(messages, metadata={"user_id": "123"})
 
     # Verify conversation_metadata is in metadata
     assert "conversation_metadata" in result.metadata
@@ -35,7 +38,8 @@ def test_orchestrator_collects_metadata_in_handoff():
     assert len(meta["attempted_solutions"]) > 0  # Contains "try"
 
 
-def test_orchestrator_auto_generates_session_id():
+@pytest.mark.asyncio
+async def test_orchestrator_auto_generates_session_id():
     """Test that session_id is auto-generated when not provided."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -47,7 +51,7 @@ def test_orchestrator_auto_generates_session_id():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
+    result = await orchestrator.create_handoff(messages, metadata={"user_id": "123"})
 
     meta = result.metadata["conversation_metadata"]
 
@@ -57,7 +61,8 @@ def test_orchestrator_auto_generates_session_id():
     assert "-" in meta["session_id"]  # UUID format
 
 
-def test_orchestrator_handles_empty_metadata():
+@pytest.mark.asyncio
+async def test_orchestrator_handles_empty_metadata():
     """Test metadata collection with no provided metadata."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -69,7 +74,7 @@ def test_orchestrator_handles_empty_metadata():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages, metadata={})
+    result = await orchestrator.create_handoff(messages, metadata={})
 
     meta = result.metadata["conversation_metadata"]
 
@@ -81,7 +86,8 @@ def test_orchestrator_handles_empty_metadata():
     assert meta["failed_queries"] == []
 
 
-def test_orchestrator_includes_both_package_and_metadata():
+@pytest.mark.asyncio
+async def test_orchestrator_includes_both_package_and_metadata():
     """Test that both conversation_package and conversation_metadata are included."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -98,7 +104,7 @@ def test_orchestrator_includes_both_package_and_metadata():
         ),
     ]
 
-    result = orchestrator.create_handoff(
+    result = await orchestrator.create_handoff(
         messages, metadata={"user_id": "user456", "channel": "web"}
     )
 

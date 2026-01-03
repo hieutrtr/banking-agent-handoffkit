@@ -2,10 +2,13 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
 from handoffkit import HandoffOrchestrator, Message
 
 
-def test_orchestrator_packages_conversation_in_handoff():
+@pytest.mark.asyncio
+async def test_orchestrator_packages_conversation_in_handoff():
     """Test that HandoffOrchestrator packages conversation history in handoff."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -22,7 +25,7 @@ def test_orchestrator_packages_conversation_in_handoff():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
+    result = await orchestrator.create_handoff(messages, metadata={"user_id": "123"})
 
     # Verify conversation_package is in metadata
     assert "conversation_package" in result.metadata
@@ -41,7 +44,8 @@ def test_orchestrator_packages_conversation_in_handoff():
     assert package["messages"][1]["speaker"] == "ai"
 
 
-def test_orchestrator_limits_conversation_package():
+@pytest.mark.asyncio
+async def test_orchestrator_limits_conversation_package():
     """Test that HandoffOrchestrator respects message limits."""
     # Create orchestrator with custom max_messages=5
     from handoffkit import HandoffConfig
@@ -59,7 +63,7 @@ def test_orchestrator_limits_conversation_package():
         for i in range(10)
     ]
 
-    result = orchestrator.create_handoff(messages)
+    result = await orchestrator.create_handoff(messages)
 
     package = result.metadata["conversation_package"]
 
@@ -73,7 +77,8 @@ def test_orchestrator_limits_conversation_package():
     assert package["messages"][-1]["content"] == "Message 9"
 
 
-def test_orchestrator_generates_conversation_summary():
+@pytest.mark.asyncio
+async def test_orchestrator_generates_conversation_summary():
     """Test that HandoffOrchestrator generates conversation summary in handoff."""
     orchestrator = HandoffOrchestrator(helpdesk="zendesk")
 
@@ -95,7 +100,7 @@ def test_orchestrator_generates_conversation_summary():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages, metadata={"user_id": "123"})
+    result = await orchestrator.create_handoff(messages, metadata={"user_id": "123"})
 
     # Verify conversation_summary is in metadata
     assert "conversation_summary" in result.metadata
@@ -117,7 +122,8 @@ def test_orchestrator_generates_conversation_summary():
     assert summary["generation_time_ms"] > 0
 
 
-def test_orchestrator_respects_summary_max_words():
+@pytest.mark.asyncio
+async def test_orchestrator_respects_summary_max_words():
     """Test that HandoffOrchestrator respects summary_max_words config."""
     from handoffkit import HandoffConfig
 
@@ -132,7 +138,7 @@ def test_orchestrator_respects_summary_max_words():
         ),
     ]
 
-    result = orchestrator.create_handoff(messages)
+    result = await orchestrator.create_handoff(messages)
 
     summary = result.metadata["conversation_summary"]
 

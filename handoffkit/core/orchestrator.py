@@ -18,11 +18,15 @@ from typing import Any, Optional
 from handoffkit.core.config import HandoffConfig, TriggerConfig
 from handoffkit.core.config_loader import ConfigLoader, load_config
 from handoffkit.core.types import (
+    ConversationContext,
+    HandoffDecision,
+    HandoffPriority,
     HandoffResult,
     HandoffStatus,
     Message,
     TriggerResult,
 )
+from handoffkit.integrations.base import BaseIntegration
 from handoffkit.utils.logging import get_logger, log_with_context
 
 # Valid helpdesk provider values
@@ -109,6 +113,9 @@ class HandoffOrchestrator:
             max_words=self._config.summary_max_words
         )
 
+        # Helpdesk integration (lazy initialized)
+        self._integration: Optional[BaseIntegration] = None
+
         # Log initialization at DEBUG level
         self._logger.debug(
             "Orchestrator initialized",
@@ -193,6 +200,66 @@ class HandoffOrchestrator:
         """Shortcut to access trigger configuration (config.triggers)."""
         return self._config.triggers
 
+    async def _get_integration(self) -> Optional[BaseIntegration]:
+        """Lazy initialize and return the helpdesk integration.
+
+        Returns:
+            The initialized integration, or None if configuration is missing.
+        """
+        if self._integration is not None:
+            return self._integration
+
+        if self._helpdesk == "zendesk":
+            # Import here to avoid circular dependency
+            from handoffkit.integrations.zendesk import ZendeskConfig, ZendeskIntegration
+
+            # Try to get config from IntegrationConfig.extra or environment
+            extra = self._config.integration.extra
+            if extra.get("subdomain") and extra.get("email") and extra.get("api_token"):
+                config = ZendeskConfig(
+                    subdomain=extra["subdomain"],
+                    email=extra["email"],
+                    api_token=extra["api_token"],
+                )
+            else:
+                # Fall back to environment variables
+                config = ZendeskConfig.from_env()
+
+            if config is None:
+                self._logger.warning(
+                    "Zendesk configuration not found. Set ZENDESK_SUBDOMAIN, "
+                    "ZENDESK_EMAIL, ZENDESK_API_TOKEN environment variables or "
+                    "provide config via integration.extra."
+                )
+                return None
+
+            self._integration = ZendeskIntegration(**config.to_integration_kwargs())
+            await self._integration.initialize()
+            self._logger.info("Zendesk integration initialized")
+
+        elif self._helpdesk == "intercom":
+            # Placeholder for Intercom integration
+            self._logger.warning("Intercom integration not yet implemented")
+            return None
+
+        elif self._helpdesk == "custom":
+            # Custom integrations must be set explicitly via set_integration()
+            self._logger.debug("Custom helpdesk requires explicit integration setup")
+            return None
+
+        return self._integration
+
+    def set_integration(self, integration: BaseIntegration) -> None:
+        """Set a custom helpdesk integration.
+
+        Use this for custom integrations or testing.
+
+        Args:
+            integration: The integration instance to use.
+        """
+        self._integration = integration
+        self._logger.debug(f"Custom integration set: {integration.integration_name}")
+
     def should_handoff(
         self,
         conversation: list[Message],
@@ -251,10 +318,11 @@ class HandoffOrchestrator:
 
         return result
 
-    def create_handoff(
+    async def create_handoff(
         self,
         conversation: list[Message],
         metadata: Optional[dict[str, Any]] = None,
+        trigger_result: Optional[TriggerResult] = None,
     ) -> HandoffResult:
         """Create a handoff to transfer the conversation to a human agent.
 
@@ -265,18 +333,16 @@ class HandoffOrchestrator:
             conversation: List of Message objects representing the conversation history.
             metadata: Optional dictionary of additional metadata to include with
                      the handoff (e.g., user_id, channel, custom fields).
+            trigger_result: Optional TriggerResult from should_handoff() to include
+                           in the handoff decision.
 
         Returns:
             HandoffResult containing the outcome of the handoff attempt.
 
-        Note:
-            This is a stub implementation that returns a pending HandoffResult.
-            Actual handoff execution will be implemented in Epic 3.
-
         Example:
             >>> orchestrator = HandoffOrchestrator(helpdesk="zendesk")
             >>> messages = [Message(speaker="user", content="I need help")]
-            >>> result = orchestrator.create_handoff(
+            >>> result = await orchestrator.create_handoff(
             ...     messages,
             ...     metadata={"user_id": "123", "channel": "web"}
             ... )
@@ -320,13 +386,64 @@ class HandoffOrchestrator:
         metadata["extracted_entities"] = [e.to_dict() for e in extracted_entities]
         metadata["conversation_summary"] = conversation_summary.to_dict()
 
-        # Stub implementation - actual handoff execution comes in Epic 3
-        result = HandoffResult(
-            success=False,
-            status=HandoffStatus.PENDING,
-            error_message="Handoff execution not yet implemented",
-            metadata=metadata,
+        # Build ConversationContext for the integration
+        # Get or generate conversation_id
+        conversation_id = metadata.get(
+            "conversation_id",
+            conversation_metadata.session_id  # Use session_id as fallback
         )
+        context = ConversationContext(
+            conversation_id=conversation_id,
+            messages=conversation,
+            metadata=metadata,
+            entities={e.entity_type.value: e.masked_value for e in extracted_entities},
+            user_id=metadata.get("user_id"),
+            session_id=metadata.get("session_id"),
+            channel=metadata.get("channel"),
+        )
+
+        # Build HandoffDecision
+        trigger_results = [trigger_result] if trigger_result else []
+        priority = HandoffPriority.MEDIUM
+        if trigger_result:
+            # Map trigger confidence to priority
+            if trigger_result.confidence >= 0.9:
+                priority = HandoffPriority.URGENT
+            elif trigger_result.confidence >= 0.7:
+                priority = HandoffPriority.HIGH
+            elif trigger_result.confidence >= 0.5:
+                priority = HandoffPriority.MEDIUM
+            else:
+                priority = HandoffPriority.LOW
+
+        decision = HandoffDecision(
+            should_handoff=True,
+            priority=priority,
+            trigger_results=trigger_results,
+            reasoning="Handoff initiated via create_handoff()",
+        )
+
+        # Try to use the configured integration
+        integration = await self._get_integration()
+        if integration is not None:
+            try:
+                result = await integration.create_ticket(context, decision)
+            except Exception as e:
+                self._logger.error(f"Integration error: {e}")
+                result = HandoffResult(
+                    success=False,
+                    status=HandoffStatus.PENDING,
+                    error_message=f"Integration error: {e}",
+                    metadata=metadata,
+                )
+        else:
+            # No integration available - return pending result
+            result = HandoffResult(
+                success=False,
+                status=HandoffStatus.PENDING,
+                error_message=f"No {self._helpdesk} integration configured",
+                metadata=metadata,
+            )
 
         # Log the result
         self._logger.info(
