@@ -78,6 +78,11 @@ class SentimentConfig(BaseModel):
         escalation_threshold: Overall threshold for automatic escalation (0.0-1.0)
         enable_local_llm: Whether to enable Tier 2 (local LLM) analysis
         financial_domain: Whether to use FinBERT for financial domain text
+        enable_cloud_llm: Whether to enable Tier 3 (cloud LLM) analysis
+        cloud_llm_provider: Cloud LLM provider ('openai' or 'anthropic')
+        cloud_llm_api_key: API key for cloud LLM provider
+        cloud_llm_model: Model to use for cloud LLM analysis
+        cloud_llm_threshold: Escalate to cloud LLM when local score below this
 
     Example:
         >>> config = SentimentConfig(tier="local_llm", enable_local_llm=True)
@@ -85,6 +90,12 @@ class SentimentConfig(BaseModel):
         'local_llm'
         >>> config.enable_local_llm
         True
+        >>> # Enable cloud LLM
+        >>> cloud_config = SentimentConfig(
+        ...     enable_cloud_llm=True,
+        ...     cloud_llm_provider="openai",
+        ...     cloud_llm_api_key="sk-...",
+        ... )
     """
 
     model_config = ConfigDict(frozen=True)
@@ -119,6 +130,31 @@ class SentimentConfig(BaseModel):
     financial_domain: bool = Field(
         default=False,
         description="Use FinBERT for financial domain-specific sentiment analysis",
+    )
+
+    # Cloud LLM Settings (Tier 3)
+    enable_cloud_llm: bool = Field(
+        default=False,
+        description="Enable Tier 3 (cloud LLM) sentiment analysis",
+    )
+    cloud_llm_provider: Optional[str] = Field(
+        default=None,
+        pattern="^(openai|anthropic)$",
+        description="Cloud LLM provider: 'openai' or 'anthropic'",
+    )
+    cloud_llm_api_key: Optional[str] = Field(
+        default=None,
+        description="API key for cloud LLM provider",
+    )
+    cloud_llm_model: str = Field(
+        default="gpt-4o-mini",
+        description="Model to use for cloud LLM analysis",
+    )
+    cloud_llm_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Escalate to cloud LLM when local score below this threshold",
     )
 
 

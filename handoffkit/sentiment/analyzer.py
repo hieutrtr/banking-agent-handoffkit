@@ -1,13 +1,17 @@
 """Sentiment analysis module for handoff detection."""
 
-from typing import Any, Optional
+from typing import Optional
 
 from handoffkit.core.config import SentimentConfig
 from handoffkit.core.types import Message, SentimentResult
+from handoffkit.sentiment.cloud_llm import (
+    CloudLLMAnalyzer,
+    OPENAI_AVAILABLE,
+    ANTHROPIC_AVAILABLE,
+)
+from handoffkit.sentiment.local_llm import LocalLLMAnalyzer, TRANSFORMERS_AVAILABLE
 from handoffkit.sentiment.models import SentimentTier
 from handoffkit.sentiment.rule_based import RuleBasedAnalyzer
-from handoffkit.sentiment.local_llm import LocalLLMAnalyzer, TRANSFORMERS_AVAILABLE
-from handoffkit.sentiment.cloud_llm import CloudLLMAnalyzer
 from handoffkit.utils.logging import get_logger
 
 logger = get_logger("sentiment.analyzer")
@@ -56,6 +60,26 @@ class SentimentAnalyzer:
                     "Falling back to Tier 1 only."
                 )
 
+        # Initialize Cloud LLM (Tier 3) if enabled and configured
+        if self._config.enable_cloud_llm and self._config.cloud_llm_api_key:
+            cloud_available = (
+                (self._config.cloud_llm_provider == "openai" and OPENAI_AVAILABLE)
+                or (
+                    self._config.cloud_llm_provider == "anthropic"
+                    and ANTHROPIC_AVAILABLE
+                )
+            )
+            if cloud_available or self._config.cloud_llm_provider:
+                self._cloud_llm = CloudLLMAnalyzer(
+                    provider=self._config.cloud_llm_provider or "openai",
+                    api_key=self._config.cloud_llm_api_key,
+                    model=self._config.cloud_llm_model,
+                )
+                logger.info(
+                    f"Cloud LLM (Tier 3) initialized with provider: "
+                    f"{self._config.cloud_llm_provider or 'openai'}"
+                )
+
     async def analyze(
         self,
         message: Message,
@@ -66,11 +90,11 @@ class SentimentAnalyzer:
         The analyzer implements a 3-tier escalation strategy:
         - Tier 1 (Rule-based): Always runs first, <10ms
         - Tier 2 (Local LLM): Escalates if Tier 1 result is ambiguous
-        - Tier 3 (Cloud LLM): Optional, for complex cases
+        - Tier 3 (Cloud LLM): Escalates if Tier 2 score is below threshold
 
         Escalation criteria:
         - Tier 1 → Tier 2: Score within 0.1 of threshold (ambiguous)
-        - Tier 2 → Tier 3: Not implemented yet
+        - Tier 2 → Tier 3: Score below cloud_llm_threshold (default 0.3)
 
         Args:
             message: Current message to analyze
@@ -82,7 +106,7 @@ class SentimentAnalyzer:
         Example:
             >>> msg = Message(speaker="user", content="I guess this is okay")
             >>> result = await analyzer.analyze(msg)
-            >>> result.tier_used  # May be "rule_based" or "local_llm" depending on ambiguity
+            >>> result.tier_used  # May be "rule_based", "local_llm", or "cloud_llm"
             'rule_based'
         """
         # Tier 1: Always run rule-based first (fastest)
@@ -104,6 +128,37 @@ class SentimentAnalyzer:
                     f"Tier 2 result: score={tier2_result.score:.3f}, "
                     f"processing_time={tier2_result.processing_time_ms:.2f}ms"
                 )
+
+                # Check if we should escalate to Tier 3
+                if self._config.enable_cloud_llm and self._cloud_llm is not None:
+                    if tier2_result.score < self._config.cloud_llm_threshold:
+                        logger.debug(
+                            f"Escalating to Tier 3: Tier 2 score {tier2_result.score:.3f} "
+                            f"below threshold {self._config.cloud_llm_threshold}"
+                        )
+                        try:
+                            tier3_result = await self._cloud_llm.analyze(message, history)
+                            # Check if cloud LLM returned a valid result (not fallback neutral)
+                            # CloudLLMAnalyzer returns neutral 0.5 on error - use tier2 instead
+                            if tier3_result.score == 0.5 and tier3_result.frustration_level == 0.5:
+                                logger.debug(
+                                    "Tier 3 returned neutral result (possible error), "
+                                    "using Tier 2 result instead"
+                                )
+                                return tier2_result
+                            logger.debug(
+                                f"Tier 3 result: score={tier3_result.score:.3f}, "
+                                f"processing_time={tier3_result.processing_time_ms:.2f}ms"
+                            )
+                            return tier3_result
+                        except Exception as e:
+                            # Graceful fallback to Tier 2 on any cloud error (AC #3)
+                            logger.warning(
+                                f"Tier 3 error ({type(e).__name__}): {e}. "
+                                "Falling back to Tier 2 result."
+                            )
+                            return tier2_result
+
                 return tier2_result
 
         # Return Tier 1 result if no escalation needed

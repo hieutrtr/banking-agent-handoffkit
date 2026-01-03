@@ -59,7 +59,7 @@ development_status:
   2-6-frustration-signal-detection-caps-and-punctuation: review
   2-7-conversation-degradation-tracking: review
   2-8-local-llm-sentiment-analysis-tier-2: review
-  2-9-optional-cloud-llm-integration-tier-3: backlog
+  2-9-optional-cloud-llm-integration-tier-3: review
   epic-2-retrospective: optional
 
   # Epic 3: Context Preservation & Helpdesk Integration
