@@ -1,6 +1,6 @@
 # Story 2.9: Optional Cloud LLM Integration (Tier 3)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
