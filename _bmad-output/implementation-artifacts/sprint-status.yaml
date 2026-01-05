@@ -69,7 +69,7 @@ development_status:
   3-3-entity-extraction: done
   3-4-conversation-summarization: done
   3-5-zendesk-integration-adapter: done
-  3-6-intercom-integration-adapter: review
+  3-6-intercom-integration-adapter: done
   3-7-generic-json-and-markdown-adapters: backlog
   3-8-agent-availability-checking: backlog
   3-9-round-robin-agent-distribution: backlog
