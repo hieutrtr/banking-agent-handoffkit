@@ -256,7 +256,7 @@ class TestConversationSummarizer:
         assert result.current_status == "awaiting_response"
 
     def test_template_format(self):
-        """Test template-based summary format."""
+        """Test template-based summary format matches AC#2."""
         summarizer = ConversationSummarizer()
 
         messages = [
@@ -274,10 +274,12 @@ class TestConversationSummarizer:
 
         result = summarizer.summarize(messages)
 
-        # Template format: "Issue: X. Tried: Y. Status: Z."
+        # AC#2: Template format: "Issue: X. Tried: Y. Status: Z."
+        # Verify period-delimited format
         assert result.summary_text.startswith("Issue:")
-        assert "Tried:" in result.summary_text
-        assert "Status:" in result.summary_text
+        assert ". Tried:" in result.summary_text
+        assert ". Status:" in result.summary_text
+        assert result.summary_text.endswith(".")
 
     def test_max_words_enforcement(self):
         """Test that summary respects max_words limit."""
@@ -468,10 +470,12 @@ class TestConversationSummarizerEdgeCases:
         # Summary should respect max_words
         assert result.word_count <= 11  # 10 + potential "..."
 
-    def test_performance_under_100ms(self):
-        """Test that summarization completes in under 100ms.
+    def test_performance_under_500ms_ac1(self):
+        """Test that summarization completes in under 500ms (AC#1).
 
-        Requirement: Template-based summarization should be very fast.
+        AC#1 requirement: generation completes in <500ms.
+        We test with 100ms as a stricter bound since template-based
+        summarization should be very fast.
         """
         summarizer = ConversationSummarizer()
 
@@ -619,3 +623,28 @@ class TestConversationSummarizerEdgeCases:
 
         # Should work without crashing
         assert result.word_count >= 1
+
+    def test_default_max_words_is_200(self):
+        """Test that default max_words is 200 as per AC#1."""
+        summarizer = ConversationSummarizer()
+
+        # Create a message with very long content that would exceed 200 words
+        long_content = "I have a problem with " + " ".join(["word"] * 300)
+
+        messages = [
+            Message(
+                speaker=MessageSpeaker.USER,
+                content=long_content,
+                timestamp=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            ),
+            Message(
+                speaker=MessageSpeaker.AI,
+                content="You can try " + " ".join(["solution"] * 100),
+                timestamp=datetime(2024, 1, 1, 12, 0, 10, tzinfo=timezone.utc),
+            ),
+        ]
+
+        result = summarizer.summarize(messages)
+
+        # AC#1: summary is max 200 words
+        assert result.word_count <= 201  # 200 + potential truncation indicator

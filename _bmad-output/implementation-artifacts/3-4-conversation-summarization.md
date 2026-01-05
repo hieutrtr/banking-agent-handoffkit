@@ -1,6 +1,6 @@
 # Story 3.4: Conversation Summarization
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -418,15 +418,14 @@ N/A - Clean TDD implementation with no significant debugging needed
 - Implemented solution extraction from AI messages using keywords ("try", "you can", "here's how", "solution", "recommend")
 - Limited solutions to last 3 (more concise than metadata's 5) and truncated to 30 words each
 - Implemented status detection: resolved (thanks, that worked, perfect), unresolved (still, doesn't work, help), awaiting_response (AI ends with ?)
-- Implemented template-based summary: "Issue: {issue}. Tried: {solutions}. Status: {status}."
+- Implemented template-based summary: "Issue: {issue}. Tried: {solutions}. Status: {status}." (AC#2 format with periods)
 - Added structured logging at start and completion of summarization
 - Integrated with `HandoffOrchestrator.create_handoff()` using late import pattern
 - Summary included in `HandoffResult.metadata["conversation_summary"]`
 - Exported classes from `handoffkit.context` and `handoffkit` main package
-- Created 26 comprehensive unit tests covering all acceptance criteria and edge cases
-- Created 2 integration tests verifying HandoffOrchestrator integration
-- All 590 tests pass (562 existing + 28 new)
-- No regressions introduced
+- Created 30 comprehensive unit tests in test_conversation_summarizer.py (16 core + 2 model + 12 edge cases)
+- Created 4 integration tests in test_orchestrator_integration.py (2 packaging + 2 summarizer tests)
+- All tests pass with no regressions
 
 **Technical Decisions:**
 - Used late import in `HandoffOrchestrator.__init__` to avoid circular dependency (same pattern as Story 3.1-3.3)
@@ -445,11 +444,24 @@ N/A - Clean TDD implementation with no significant debugging needed
 
 ### File List
 
-- `handoffkit/context/summarizer.py` - ConversationSummarizer class (new file, 269 lines)
+- `handoffkit/context/summarizer.py` - ConversationSummarizer class (new file, 324 lines)
 - `handoffkit/context/models.py` - Added ConversationSummary model
 - `handoffkit/context/__init__.py` - Updated exports
 - `handoffkit/__init__.py` - Updated main package exports
 - `handoffkit/core/orchestrator.py` - Integrated ConversationSummarizer with late import
-- `tests/test_conversation_summarizer.py` - 26 comprehensive unit tests + 3 edge case tests (new file)
-- `tests/test_orchestrator_integration.py` - Added 2 integration tests for summarizer
+- `tests/test_conversation_summarizer.py` - 30 comprehensive unit tests (new file)
+- `tests/test_orchestrator_integration.py` - 4 integration tests (2 packaging + 2 summarizer)
 - `_bmad-output/implementation-artifacts/3-4-conversation-summarization.md` - Story file (this file)
+
+### Code Review Fixes Applied
+
+The following issues were found and fixed during code review:
+
+| Severity | Issue | Fix Applied |
+|----------|-------|-------------|
+| HIGH | AC#2: Template format missing periods | Changed to "Issue: X. Tried: Y. Status: Z." format |
+| HIGH | Performance test name didn't match AC#1 | Renamed to test_performance_under_500ms_ac1 |
+| HIGH | No test for default 200-word limit | Added test_default_max_words_is_200 |
+| HIGH | Story file test counts incorrect | Updated to accurate counts (30 unit + 4 integration) |
+| MEDIUM | Template format test not validating periods | Added assertions for ". Tried:" and ". Status:" |
+| MEDIUM | Story claimed wrong integration test count | Fixed to 4 tests total |

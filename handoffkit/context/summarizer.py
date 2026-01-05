@@ -269,8 +269,9 @@ class ConversationSummarizer:
         total_words = issue_words + tried_words + status_words
 
         # Check if truncation needed
+        # AC#2: Format is "Issue: X. Tried: Y. Status: Z." with periods
         if total_words <= self._max_words:
-            summary = f"{issue_text} {tried_text} {status_text}"
+            summary = f"{issue_text}. {tried_text}. {status_text}."
         else:
             # Proportional truncation: preserve status, truncate issue and tried proportionally
             available_words = self._max_words - status_words
@@ -299,7 +300,7 @@ class ConversationSummarizer:
                     tried_text = self._truncate_to_words("No solutions attempted", tried_budget - 1)
                     tried_text = f"Tried: {tried_text}"
 
-                summary = f"{issue_text} {tried_text} {status_text}"
+                summary = f"{issue_text}. {tried_text}. {status_text}."
 
         return summary
 
