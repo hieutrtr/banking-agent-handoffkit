@@ -238,9 +238,30 @@ class HandoffOrchestrator:
             self._logger.info("Zendesk integration initialized")
 
         elif self._helpdesk == "intercom":
-            # Placeholder for Intercom integration
-            self._logger.warning("Intercom integration not yet implemented")
-            return None
+            # Import here to avoid circular dependency
+            from handoffkit.integrations.intercom import IntercomConfig, IntercomIntegration
+
+            # Try to get config from IntegrationConfig.extra or environment
+            extra = self._config.integration.extra
+            if extra.get("access_token"):
+                config = IntercomConfig(
+                    access_token=extra["access_token"],
+                    app_id=extra.get("app_id"),
+                )
+            else:
+                # Fall back to environment variables
+                config = IntercomConfig.from_env()
+
+            if config is None:
+                self._logger.warning(
+                    "Intercom configuration not found. Set INTERCOM_ACCESS_TOKEN "
+                    "environment variable or provide config via integration.extra."
+                )
+                return None
+
+            self._integration = IntercomIntegration(**config.to_integration_kwargs())
+            await self._integration.initialize()
+            self._logger.info("Intercom integration initialized")
 
         elif self._helpdesk == "custom":
             # Custom integrations must be set explicitly via set_integration()
