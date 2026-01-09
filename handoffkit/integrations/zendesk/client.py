@@ -19,6 +19,8 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Optional
+from functools import lru_cache
+import time
 
 import httpx
 
@@ -43,7 +45,7 @@ class ZendeskIntegration(BaseIntegration):
 
     Supports:
     - Ticket creation with context
-    - Agent availability via Zendesk Talk/Chat
+    - Agent availability via Zendesk Users API
     - Ticket assignment
     - Status tracking
 
@@ -87,6 +89,7 @@ class ZendeskIntegration(BaseIntegration):
         subdomain: str,
         email: str,
         api_token: str,
+        availability_cache_ttl: int = 30,
     ) -> None:
         """Initialize Zendesk integration.
 
@@ -94,6 +97,7 @@ class ZendeskIntegration(BaseIntegration):
             subdomain: Zendesk subdomain (e.g., 'company' for company.zendesk.com).
             email: Admin email for API access.
             api_token: Zendesk API token.
+            availability_cache_ttl: Cache TTL for agent availability in seconds.
         """
         self._subdomain = subdomain
         self._email = email
@@ -102,6 +106,9 @@ class ZendeskIntegration(BaseIntegration):
         self._client: Optional[httpx.AsyncClient] = None
         self._initialized = False
         self._authenticated_user: Optional[dict[str, Any]] = None
+        self._availability_cache_ttl = availability_cache_ttl
+        # Cache for agent availability (instance-level)
+        self._availability_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         # Retry queue for failed handoffs (MVP: in-memory)
         self._retry_queue: deque[dict[str, Any]] = deque(maxlen=100)
 
@@ -475,18 +482,159 @@ class ZendeskIntegration(BaseIntegration):
     ) -> list[dict[str, Any]]:
         """Check Zendesk agent availability.
 
-        Note: Full implementation pending (Story 3.8).
-        Currently returns empty list.
+        Queries the Zendesk Users API to find agents who are currently online.
+        Results are cached for 30 seconds to meet performance requirements.
 
         Args:
             department: Optional department filter.
 
         Returns:
-            List of available agent info.
+            List of available agent info with id, name, email, and status.
+            Returns empty list if no agents available or on error.
         """
-        # Placeholder for Story 3.8
-        logger.debug("Agent availability check not yet implemented")
-        return []
+        if not self._initialized:
+            await self.initialize()
+
+        # Create cache key based on department
+        cache_key = f"agents:{department or 'all'}"
+        current_time = time.time()
+
+        # Check cache first
+        if cache_key in self._availability_cache:
+            cached_time, cached_agents = self._availability_cache[cache_key]
+            if current_time - cached_time < self._availability_cache_ttl:
+                logger.debug(f"Returning cached agent availability for {cache_key}")
+                return cached_agents
+
+        logger.info(
+            "Checking Zendesk agent availability",
+            extra={"department": department, "cache_key": cache_key}
+        )
+
+        try:
+            # Build query parameters
+            params = {
+                "role": "agent",
+                "active": "true",
+            }
+
+            # Add department filter if provided
+            if department:
+                # Zendesk doesn't have a direct department parameter,
+                # so we'll need to filter after fetching
+                pass
+
+            # Query Zendesk Users API
+            response = await self._client.get(
+                "/api/v2/users.json",
+                params=params,
+                timeout=5.0  # 5 second timeout for performance
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            users = data.get("users", [])
+
+            # Filter online agents
+            available_agents = []
+            for user in users:
+                # Check if user is an agent and online
+                if (user.get("role") == "agent" and
+                    user.get("active", False) and
+                    self._is_user_online(user)):
+
+                    agent_info = {
+                        "id": str(user.get("id", "")),
+                        "name": user.get("name", ""),
+                        "email": user.get("email", ""),
+                        "status": "online",
+                        "platform": "zendesk",
+                    }
+
+                    # Apply department filter if provided
+                    if department and not self._user_in_department(user, department):
+                        continue
+
+                    available_agents.append(agent_info)
+
+            # Cache the results
+            self._availability_cache[cache_key] = (current_time, available_agents)
+
+            logger.info(
+                f"Found {len(available_agents)} available agents",
+                extra={
+                    "agent_count": len(available_agents),
+                    "department": department,
+                    "cache_key": cache_key
+                }
+            )
+
+            return available_agents
+
+        except httpx.TimeoutException:
+            logger.error("Zendesk availability check timed out")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Zendesk API error: {e.response.status_code} - {e.response.text}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error checking Zendesk availability: {e}")
+            return []
+
+    def _is_user_online(self, user: dict[str, Any]) -> bool:
+        """Determine if a Zendesk user is currently online.
+
+        Args:
+            user: User dictionary from Zendesk API
+
+        Returns:
+            True if user appears to be online
+        """
+        # Check custom fields for online status
+        user_fields = user.get("user_fields", {})
+
+        # Common field names for online status
+        status_field = (
+            user_fields.get("status") or
+            user_fields.get("availability_status") or
+            user_fields.get("online_status")
+        )
+
+        # If there's an explicit status field, use it
+        if status_field:
+            return status_field.lower() in ["online", "available"]
+
+        # If no explicit status field, check if user is active
+        # Note: This is a fallback - in production, you might want to
+        # integrate with Zendesk Chat or Talk APIs for real online status
+        return user.get("active", False)
+
+    def _user_in_department(self, user: dict[str, Any], department: str) -> bool:
+        """Check if user belongs to specified department.
+
+        Args:
+            user: User dictionary from Zendesk API
+            department: Department name to check
+
+        Returns:
+            True if user is in the department
+        """
+        user_fields = user.get("user_fields", {})
+
+        # Check various possible department field names
+        user_dept = (
+            user_fields.get("department") or
+            user_fields.get("team") or
+            user_fields.get("group")
+        )
+
+        if user_dept:
+            return user_dept.lower() == department.lower()
+
+        # Check groups if user has any
+        # Note: This would require an additional API call to get user's groups
+        # For now, we'll skip this and document the limitation
+        return True
 
     async def assign_to_agent(
         self,

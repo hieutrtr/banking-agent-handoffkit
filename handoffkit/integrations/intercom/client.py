@@ -17,6 +17,8 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Optional
+from functools import lru_cache
+import time
 
 import httpx
 
@@ -81,12 +83,14 @@ class IntercomIntegration(BaseIntegration):
         self,
         access_token: str,
         app_id: Optional[str] = None,
+        availability_cache_ttl: int = 30,
     ) -> None:
         """Initialize Intercom integration.
 
         Args:
             access_token: Intercom API access token.
             app_id: Optional Intercom app ID (used for conversation URLs).
+            availability_cache_ttl: Cache TTL for agent availability in seconds.
         """
         self._access_token = access_token
         self._app_id = app_id
@@ -95,6 +99,9 @@ class IntercomIntegration(BaseIntegration):
         self._initialized = False
         self._app_info: Optional[dict[str, Any]] = None
         self._admin_id: Optional[str] = None
+        self._availability_cache_ttl = availability_cache_ttl
+        # Cache for teammate availability (instance-level)
+        self._availability_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         # Retry queue for failed handoffs (MVP: in-memory)
         self._retry_queue: deque[dict[str, Any]] = deque(maxlen=100)
 
@@ -664,18 +671,121 @@ class IntercomIntegration(BaseIntegration):
     ) -> list[dict[str, Any]]:
         """Check Intercom team member availability.
 
-        Note: Full implementation pending (Story 3.8).
-        Currently returns empty list.
+        Queries the Intercom Admins API to find teammates who are currently available.
+        Results are cached for 30 seconds to meet performance requirements.
 
         Args:
             department: Optional department/team filter.
 
         Returns:
-            List of available agent info.
+            List of available team member info with id, name, email, and status.
+            Returns empty list if no teammates available or on error.
         """
-        # Placeholder for Story 3.8
-        logger.debug("Agent availability check not yet implemented")
-        return []
+        if not self._initialized:
+            await self.initialize()
+
+        # Create cache key based on department
+        cache_key = f"admins:{department or 'all'}"
+        current_time = time.time()
+
+        # Check cache first
+        if cache_key in self._availability_cache:
+            cached_time, cached_agents = self._availability_cache[cache_key]
+            if current_time - cached_time < self._availability_cache_ttl:
+                logger.debug(f"Returning cached teammate availability for {cache_key}")
+                return cached_agents
+
+        logger.info(
+            "Checking Intercom teammate availability",
+            extra={"department": department, "cache_key": cache_key}
+        )
+
+        try:
+            # Query Intercom Admins API
+            response = await self._client.get(
+                "/admins",
+                timeout=5.0  # 5 second timeout for performance
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            admins = data.get("admins", [])
+
+            # Filter available teammates
+            available_teammates = []
+            for admin in admins:
+                # Check if admin is available (not in away mode)
+                if self._is_admin_available(admin):
+
+                    teammate_info = {
+                        "id": str(admin.get("id", "")),
+                        "name": admin.get("name", ""),
+                        "email": admin.get("email", ""),
+                        "status": "available",
+                        "platform": "intercom",
+                    }
+
+                    # Apply department filter if provided
+                    if department and not self._admin_in_department(admin, department):
+                        continue
+
+                    available_teammates.append(teammate_info)
+
+            # Cache the results
+            self._availability_cache[cache_key] = (current_time, available_teammates)
+
+            logger.info(
+                f"Found {len(available_teammates)} available teammates",
+                extra={
+                    "teammate_count": len(available_teammates),
+                    "department": department,
+                    "cache_key": cache_key
+                }
+            )
+
+            return available_teammates
+
+        except httpx.TimeoutException:
+            logger.error("Intercom availability check timed out")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Intercom API error: {e.response.status_code} - {e.response.text}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error checking Intercom availability: {e}")
+            return []
+
+    def _is_admin_available(self, admin: dict[str, Any]) -> bool:
+        """Determine if an Intercom admin is currently available.
+
+        Args:
+            admin: Admin dictionary from Intercom API
+
+        Returns:
+            True if admin appears to be available
+        """
+        # Check away mode - available if not in away mode
+        away_mode = admin.get("away_mode_enabled", False)
+        if away_mode:
+            return False
+
+        # Check if admin is active
+        return admin.get("active", True)
+
+    def _admin_in_department(self, admin: dict[str, Any], department: str) -> bool:
+        """Check if admin belongs to specified department.
+
+        Args:
+            admin: Admin dictionary from Intercom API
+            department: Department name to check
+
+        Returns:
+            True if admin is in the department
+        """
+        # Intercom doesn't have a direct department field for admins
+        # We could check teams or custom attributes if available
+        # For now, we'll return True and document the limitation
+        return True
 
     async def assign_to_agent(
         self,

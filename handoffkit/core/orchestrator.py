@@ -30,7 +30,7 @@ from handoffkit.integrations.base import BaseIntegration
 from handoffkit.utils.logging import get_logger, log_with_context
 
 # Valid helpdesk provider values
-_VALID_HELPDESKS = {"zendesk", "intercom", "custom"}
+_VALID_HELPDESKS = {"zendesk", "intercom", "json", "markdown", "custom"}
 
 
 class HandoffOrchestrator:
@@ -263,6 +263,34 @@ class HandoffOrchestrator:
             await self._integration.initialize()
             self._logger.info("Intercom integration initialized")
 
+        elif self._helpdesk == "json":
+            # Import here to avoid circular dependency
+            from handoffkit.integrations.generic import GenericIntegration
+
+            # Get optional config from IntegrationConfig.extra
+            extra = self._config.integration.extra
+            self._integration = GenericIntegration(
+                pretty=extra.get("pretty", True),
+                include_metadata=extra.get("include_metadata", True),
+                exclude_empty_fields=extra.get("exclude_empty_fields", False),
+            )
+            await self._integration.initialize()
+            self._logger.info("Generic JSON integration initialized")
+
+        elif self._helpdesk == "markdown":
+            # Import here to avoid circular dependency
+            from handoffkit.integrations.markdown import MarkdownIntegration
+
+            # Get optional config from IntegrationConfig.extra
+            extra = self._config.integration.extra
+            self._integration = MarkdownIntegration(
+                include_summary=extra.get("include_summary", True),
+                include_entities=extra.get("include_entities", True),
+                include_full_history=extra.get("include_full_history", False),
+            )
+            await self._integration.initialize()
+            self._logger.info("Markdown integration initialized")
+
         elif self._helpdesk == "custom":
             # Custom integrations must be set explicitly via set_integration()
             self._logger.debug("Custom helpdesk requires explicit integration setup")
@@ -448,7 +476,90 @@ class HandoffOrchestrator:
         integration = await self._get_integration()
         if integration is not None:
             try:
-                result = await integration.create_ticket(context, decision)
+                # Check agent availability first (Story 3.8)
+                available_agents = await self._check_agent_availability_with_fallback(integration)
+
+                if available_agents:
+                    # Assign to first available agent
+                    assigned_agent = available_agents[0]
+                    self._logger.info(
+                        f"Assigning handoff to available agent: {assigned_agent['name']}",
+                        extra={
+                            "agent_id": assigned_agent["id"],
+                            "agent_name": assigned_agent["name"],
+                            "agent_email": assigned_agent["email"],
+                        }
+                    )
+
+                    # Create ticket with agent assignment
+                    result = await integration.create_ticket(context, decision)
+
+                    # If ticket creation succeeded, assign to agent
+                    if result.success and hasattr(integration, 'assign_to_agent'):
+                        try:
+                            assignment_success = await integration.assign_to_agent(
+                                result.ticket_id,
+                                assigned_agent["id"]
+                            )
+                            if assignment_success:
+                                result.assigned_agent = assigned_agent["name"]
+                                self._logger.info(
+                                    f"Successfully assigned ticket to agent",
+                                    extra={
+                                        "ticket_id": result.ticket_id,
+                                        "agent_id": assigned_agent["id"],
+                                    }
+                                )
+                            else:
+                                self._logger.warning(
+                                    f"Failed to assign ticket to agent, ticket created unassigned",
+                                    extra={
+                                        "ticket_id": result.ticket_id,
+                                        "agent_id": assigned_agent["id"],
+                                    }
+                                )
+                        except Exception as assign_error:
+                            self._logger.warning(
+                                f"Agent assignment failed, ticket created unassigned: {assign_error}",
+                                extra={
+                                    "ticket_id": result.ticket_id,
+                                    "agent_id": assigned_agent["id"],
+                                }
+                            )
+
+                    # Add availability info to result metadata
+                    if result.metadata is None:
+                        result.metadata = {}
+                    result.metadata["agent_availability"] = {
+                        "checked": True,
+                        "agents_available": len(available_agents),
+                        "assigned_agent": assigned_agent["name"],
+                        "assignment_method": "availability_check",
+                    }
+
+                elif available_agents is not None:
+                    # Availability was checked but no agents available - create unassigned ticket
+                    self._logger.info(
+                        "No agents available, creating unassigned ticket",
+                        extra={"agent_count": 0}
+                    )
+
+                    # Create ticket without agent assignment
+                    result = await integration.create_ticket(context, decision)
+
+                    # Add availability info to result metadata
+                    if result.metadata is None:
+                        result.metadata = {}
+                    result.metadata["agent_availability"] = {
+                        "checked": True,
+                        "agents_available": 0,
+                        "assignment_method": "unassigned_fallback",
+                    }
+
+                else:
+                    # Availability check not supported - create ticket normally
+                    result = await integration.create_ticket(context, decision)
+
             except Exception as e:
                 self._logger.error(f"Integration error: {e}")
                 result = HandoffResult(
@@ -478,3 +589,48 @@ class HandoffOrchestrator:
         )
 
         return result
+
+    async def _check_agent_availability_with_fallback(
+        self,
+        integration: BaseIntegration,
+    ) -> Optional[list[dict[str, Any]]]:
+        """Check agent availability with error handling and fallback.
+
+        Args:
+            integration: The helpdesk integration to check availability for.
+
+        Returns:
+            List of available agents, None if not supported, or empty list on error.
+        """
+        try:
+            # Check if integration supports availability checking
+            if "check_agent_availability" not in integration.supported_features:
+                self._logger.debug(
+                    f"Integration {integration.integration_name} does not support availability checking"
+                )
+                return None
+
+            # Check agent availability
+            self._logger.debug(f"Checking agent availability for {integration.integration_name}")
+            available_agents = await integration.check_agent_availability()
+
+            self._logger.info(
+                f"Agent availability check completed: {len(available_agents)} agents available",
+                extra={
+                    "integration": integration.integration_name,
+                    "agents_available": len(available_agents),
+                }
+            )
+
+            return available_agents
+
+        except Exception as e:
+            # Log error but don't fail the handoff - fall back to unassigned
+            self._logger.warning(
+                f"Agent availability check failed, falling back to unassigned: {e}",
+                extra={
+                    "integration": integration.integration_name,
+                    "error": str(e),
+                }
+            )
+            return []

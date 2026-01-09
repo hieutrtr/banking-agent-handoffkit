@@ -71,7 +71,7 @@ development_status:
   3-5-zendesk-integration-adapter: done
   3-6-intercom-integration-adapter: done
   3-7-generic-json-and-markdown-adapters: done
-  3-8-agent-availability-checking: ready-for-dev
+  3-8-agent-availability-checking: in-progress
   3-9-round-robin-agent-distribution: backlog
   3-10-fallback-ticket-creation: backlog
   3-11-configurable-routing-rules: backlog
