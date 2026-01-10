@@ -111,7 +111,7 @@ class TestOrchestratorAgentAssignment:
         assert result.metadata["agent_availability"]["checked"] is True
         assert result.metadata["agent_availability"]["agents_available"] == 1
         assert result.metadata["agent_availability"]["assigned_agent"] == "John Agent"
-        assert result.metadata["agent_availability"]["assignment_method"] == "availability_check"
+        assert result.metadata["agent_availability"]["assignment_method"] == "round_robin"
 
         # Verify calls
         mock_integration.check_agent_availability.assert_called_once()

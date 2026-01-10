@@ -13,10 +13,12 @@ Example usage:
     >>> orchestrator = HandoffOrchestrator.from_env()
 """
 
+from datetime import datetime
 from typing import Any, Optional
 
 from handoffkit.core.config import HandoffConfig, TriggerConfig
 from handoffkit.core.config_loader import ConfigLoader, load_config
+from handoffkit.core.round_robin import RoundRobinAssigner
 from handoffkit.core.types import (
     ConversationContext,
     HandoffDecision,
@@ -115,6 +117,9 @@ class HandoffOrchestrator:
 
         # Helpdesk integration (lazy initialized)
         self._integration: Optional[BaseIntegration] = None
+
+        # Round-robin assigner (per-integration, lazy initialized)
+        self._round_robin_assigners: dict[str, RoundRobinAssigner] = {}
 
         # Log initialization at DEBUG level
         self._logger.debug(
@@ -298,6 +303,22 @@ class HandoffOrchestrator:
 
         return self._integration
 
+    def _get_round_robin_assigner(self, integration_name: str) -> RoundRobinAssigner:
+        """Get or create round-robin assigner for an integration.
+
+        Args:
+            integration_name: Name of the integration
+
+        Returns:
+            RoundRobinAssigner instance for the integration
+        """
+        if integration_name not in self._round_robin_assigners:
+            self._round_robin_assigners[integration_name] = RoundRobinAssigner(
+                rotation_window_minutes=self._config.routing.round_robin_rotation_window_minutes,
+                assignment_history_size=self._config.routing.round_robin_history_size,
+            )
+        return self._round_robin_assigners[integration_name]
+
     def set_integration(self, integration: BaseIntegration) -> None:
         """Set a custom helpdesk integration.
 
@@ -480,16 +501,53 @@ class HandoffOrchestrator:
                 available_agents = await self._check_agent_availability_with_fallback(integration)
 
                 if available_agents:
-                    # Assign to first available agent
-                    assigned_agent = available_agents[0]
-                    self._logger.info(
-                        f"Assigning handoff to available agent: {assigned_agent['name']}",
-                        extra={
-                            "agent_id": assigned_agent["id"],
-                            "agent_name": assigned_agent["name"],
-                            "agent_email": assigned_agent["email"],
-                        }
-                    )
+                    # Use round-robin assignment if enabled
+                    assigned_agent = None
+                    assignment_method = "availability_check"
+
+                    if self._config.routing.round_robin_enabled:
+                        try:
+                            assigner = self._get_round_robin_assigner(integration.integration_name)
+                            selected_agent = await assigner.select_agent(
+                                available_agents,
+                                handoff_id=f"handoff-{datetime.now().timestamp()}"
+                            )
+
+                            if selected_agent:
+                                assigned_agent = selected_agent
+                                assignment_method = "round_robin"
+                                self._logger.info(
+                                    f"Assigning handoff via round-robin to agent: {assigned_agent['name']}",
+                                    extra={
+                                        "agent_id": assigned_agent["id"],
+                                        "agent_name": assigned_agent["name"],
+                                        "agent_email": assigned_agent["email"],
+                                        "assignment_method": assignment_method,
+                                    }
+                                )
+                            else:
+                                self._logger.warning(
+                                    "Round-robin assignment returned no agent, using fallback",
+                                    extra={"available_agents": len(available_agents)}
+                                )
+                        except Exception as rr_error:
+                            self._logger.warning(
+                                f"Round-robin assignment failed, using fallback: {rr_error}",
+                                extra={"error": str(rr_error)}
+                            )
+
+                    # Fallback to first available agent if round-robin failed or disabled
+                    if not assigned_agent:
+                        assigned_agent = available_agents[0]
+                        self._logger.info(
+                            f"Assigning handoff to first available agent: {assigned_agent['name']}",
+                            extra={
+                                "agent_id": assigned_agent["id"],
+                                "agent_name": assigned_agent["name"],
+                                "agent_email": assigned_agent["email"],
+                                "assignment_method": assignment_method,
+                            }
+                        )
 
                     # Create ticket with agent assignment
                     result = await integration.create_ticket(context, decision)
@@ -508,6 +566,7 @@ class HandoffOrchestrator:
                                     extra={
                                         "ticket_id": result.ticket_id,
                                         "agent_id": assigned_agent["id"],
+                                        "assignment_method": assignment_method,
                                     }
                                 )
                             else:
@@ -534,7 +593,7 @@ class HandoffOrchestrator:
                         "checked": True,
                         "agents_available": len(available_agents),
                         "assigned_agent": assigned_agent["name"],
-                        "assignment_method": "availability_check",
+                        "assignment_method": assignment_method,
                     }
 
                 elif available_agents is not None:

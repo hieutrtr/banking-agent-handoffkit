@@ -165,6 +165,10 @@ class RoutingConfig(BaseModel):
         strategy: Routing strategy ('round_robin', 'least_busy', 'skill_based')
         fallback_queue: Queue name when no agents available
         availability_cache_ttl: Seconds to cache agent availability (5-300)
+        round_robin_enabled: Enable round-robin assignment
+        round_robin_rotation_window_minutes: Minutes to wait before reassigning to same agent
+        round_robin_history_size: Maximum number of assignments to track (100-10000)
+        round_robin_fallback_retry_attempts: Number of retry attempts on assignment failure
 
     Example:
         >>> config = RoutingConfig(strategy="least_busy")
@@ -188,6 +192,29 @@ class RoutingConfig(BaseModel):
         ge=5,
         le=300,
         description="Seconds to cache agent availability data (5-300)",
+    )
+    # Round-robin specific configuration
+    round_robin_enabled: bool = Field(
+        default=True,
+        description="Enable round-robin assignment distribution",
+    )
+    round_robin_rotation_window_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="Minutes to wait before reassigning to the same agent (1-60)",
+    )
+    round_robin_history_size: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="Maximum number of assignments to track in history (100-10000)",
+    )
+    round_robin_fallback_retry_attempts: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Number of retry attempts when round-robin assignment fails (0-10)",
     )
 
 
