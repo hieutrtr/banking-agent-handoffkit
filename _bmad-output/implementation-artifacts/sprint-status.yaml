@@ -72,9 +72,9 @@ development_status:
   3-6-intercom-integration-adapter: done
   3-7-generic-json-and-markdown-adapters: done
   3-8-agent-availability-checking: done
-  3-9-round-robin-agent-distribution: ready-for-dev
-  3-10-fallback-ticket-creation: ready-for-dev
-  3-11-configurable-routing-rules: backlog
+  3-9-round-robin-agent-distribution: done
+  3-10-fallback-ticket-creation: done
+  3-11-configurable-routing-rules: ready-for-dev
   epic-3-retrospective: optional
 
   # Epic 4: REST API & External Integration

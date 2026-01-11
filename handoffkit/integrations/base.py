@@ -89,3 +89,57 @@ class BaseIntegration(ABC):
     async def close(self) -> None:
         """Clean up integration resources."""
         pass
+
+    # Fallback ticket creation methods
+    @abstractmethod
+    async def create_unassigned_ticket(
+        self,
+        context: ConversationContext,
+        decision: HandoffDecision,
+        fallback_reason: str,
+    ) -> HandoffResult:
+        """Create a ticket without agent assignment (fallback scenario).
+
+        Args:
+            context: Packaged conversation context.
+            decision: Handoff decision with priority.
+            fallback_reason: Why fallback was used.
+
+        Returns:
+            HandoffResult with unassigned ticket details.
+        """
+        pass
+
+    @abstractmethod
+    async def convert_to_unassigned(
+        self,
+        ticket_id: str,
+        fallback_reason: str,
+    ) -> bool:
+        """Convert an assigned ticket to unassigned (when assignment fails).
+
+        Args:
+            ticket_id: ID of the ticket to convert.
+            fallback_reason: Why the conversion is needed.
+
+        Returns:
+            True if conversion succeeded.
+        """
+        pass
+
+    @abstractmethod
+    async def retry_assignment(
+        self,
+        ticket_id: str,
+        agent_id: str,
+    ) -> bool:
+        """Retry assigning an unassigned ticket to an agent.
+
+        Args:
+            ticket_id: ID of the unassigned ticket.
+            agent_id: ID of the agent to assign to.
+
+        Returns:
+            True if assignment succeeded.
+        """
+        pass

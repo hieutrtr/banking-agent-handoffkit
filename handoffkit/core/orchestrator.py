@@ -13,12 +13,14 @@ Example usage:
     >>> orchestrator = HandoffOrchestrator.from_env()
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
+import uuid
 
 from handoffkit.core.config import HandoffConfig, TriggerConfig
 from handoffkit.core.config_loader import ConfigLoader, load_config
 from handoffkit.core.round_robin import RoundRobinAssigner
+from handoffkit.routing import RoutingEngine, RoutingResult
 from handoffkit.core.types import (
     ConversationContext,
     HandoffDecision,
@@ -28,6 +30,8 @@ from handoffkit.core.types import (
     Message,
     TriggerResult,
 )
+from handoffkit.fallback import FallbackNotifier, RetryQueue, RetryScheduler, FallbackStorage
+from handoffkit.fallback.models import FallbackReason, FallbackTicket, FallbackStatus
 from handoffkit.integrations.base import BaseIntegration
 from handoffkit.utils.logging import get_logger, log_with_context
 
@@ -120,6 +124,15 @@ class HandoffOrchestrator:
 
         # Round-robin assigner (per-integration, lazy initialized)
         self._round_robin_assigners: dict[str, RoundRobinAssigner] = {}
+
+        # Fallback components
+        self._fallback_storage = FallbackStorage()
+        self._fallback_retry_queue = RetryQueue()
+        self._fallback_notifier = FallbackNotifier()
+        self._fallback_scheduler: Optional[RetryScheduler] = None
+
+        # Routing engine for custom rules
+        self._routing_engine = RoutingEngine(self._config.routing)
 
         # Log initialization at DEBUG level
         self._logger.debug(
@@ -319,6 +332,205 @@ class HandoffOrchestrator:
             )
         return self._round_robin_assigners[integration_name]
 
+    async def _handle_rule_based_routing(
+        self,
+        integration: BaseIntegration,
+        available_agents: list[dict[str, Any]],
+        context: ConversationContext,
+        decision: HandoffDecision,
+    ) -> tuple[Optional[dict[str, Any]], str]:
+        """Handle routing based on rule-based assignment.
+
+        Args:
+            integration: The helpdesk integration
+            available_agents: List of available agents
+            context: Conversation context
+            decision: Handoff decision
+
+        Returns:
+            Tuple of (assigned_agent, assignment_method)
+        """
+        # Check if we have specific assignment from routing rules
+        routing_metadata = context.metadata.get("routing", {})
+
+        # Check for specific agent assignment
+        assigned_agent_id = routing_metadata.get("assigned_agent")
+        if assigned_agent_id:
+            # Find the agent in available agents
+            for agent in available_agents:
+                if agent["id"] == assigned_agent_id:
+                    self._logger.info(
+                        f"Assigning to specific agent from routing rule: {agent['name']}",
+                        extra={
+                            "agent_id": agent["id"],
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_agent"
+
+            # Agent not found in available agents
+            self._logger.warning(
+                f"Rule-assigned agent {assigned_agent_id} not in available agents",
+                extra={"available_agents": len(available_agents)},
+            )
+
+        # Check for queue assignment
+        assigned_queue = routing_metadata.get("assigned_queue")
+        if assigned_queue and hasattr(integration, 'get_agents_in_queue'):
+            try:
+                queue_agents = await integration.get_agents_in_queue(assigned_queue)
+                if queue_agents:
+                    # Use first agent from queue
+                    agent = queue_agents[0]
+                    self._logger.info(
+                        f"Assigning to agent from queue {assigned_queue}: {agent['name']}",
+                        extra={
+                            "queue": assigned_queue,
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_queue"
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to get agents in queue {assigned_queue}: {e}",
+                    extra={"error": str(e)},
+                )
+
+        # Check for department assignment
+        assigned_department = routing_metadata.get("assigned_department")
+        if assigned_department and hasattr(integration, 'get_agents_in_department'):
+            try:
+                dept_agents = await integration.get_agents_in_department(assigned_department)
+                if dept_agents:
+                    # Use first agent from department
+                    agent = dept_agents[0]
+                    self._logger.info(
+                        f"Assigning to agent from department {assigned_department}: {agent['name']}",
+                        extra={
+                            "department": assigned_department,
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_department"
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to get agents in department {assigned_department}: {e}",
+                    extra={"error": str(e)},
+                )
+
+        # No specific assignment from rules
+        return None, "availability_check"
+
+    def _get_round_robin_assigner(self, integration_name: str) -> RoundRobinAssigner:
+
+        Args:
+            integration_name: Name of the integration
+
+        Returns:
+            RoundRobinAssigner instance for the integration
+        """
+        if integration_name not in self._round_robin_assigners:
+            self._round_robin_assigners[integration_name] = RoundRobinAssigner(
+                rotation_window_minutes=self._config.routing.round_robin_rotation_window_minutes,
+                assignment_history_size=self._config.routing.round_robin_history_size,
+            )
+        return self._round_robin_assigners[integration_name]
+
+    async def _handle_rule_based_routing(
+        self,
+        integration: BaseIntegration,
+        available_agents: list[dict[str, Any]],
+        context: ConversationContext,
+        decision: HandoffDecision,
+    ) -> tuple[Optional[dict[str, Any]], str]:
+        """Handle routing based on rule-based assignment.
+
+        Args:
+            integration: The helpdesk integration
+            available_agents: List of available agents
+            context: Conversation context
+            decision: Handoff decision
+
+        Returns:
+            Tuple of (assigned_agent, assignment_method)
+        """
+        # Check if we have specific assignment from routing rules
+        routing_metadata = context.metadata.get("routing", {})
+
+        # Check for specific agent assignment
+        assigned_agent_id = routing_metadata.get("assigned_agent")
+        if assigned_agent_id:
+            # Find the agent in available agents
+            for agent in available_agents:
+                if agent["id"] == assigned_agent_id:
+                    self._logger.info(
+                        f"Assigning to specific agent from routing rule: {agent['name']}",
+                        extra={
+                            "agent_id": agent["id"],
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_agent"
+
+            # Agent not found in available agents
+            self._logger.warning(
+                f"Rule-assigned agent {assigned_agent_id} not in available agents",
+                extra={"available_agents": len(available_agents)},
+            )
+
+        # Check for queue assignment
+        assigned_queue = routing_metadata.get("assigned_queue")
+        if assigned_queue and hasattr(integration, 'get_agents_in_queue'):
+            try:
+                queue_agents = await integration.get_agents_in_queue(assigned_queue)
+                if queue_agents:
+                    # Use first agent from queue
+                    agent = queue_agents[0]
+                    self._logger.info(
+                        f"Assigning to agent from queue {assigned_queue}: {agent['name']}",
+                        extra={
+                            "queue": assigned_queue,
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_queue"
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to get agents in queue {assigned_queue}: {e}",
+                    extra={"error": str(e)},
+                )
+
+        # Check for department assignment
+        assigned_department = routing_metadata.get("assigned_department")
+        if assigned_department and hasattr(integration, 'get_agents_in_department'):
+            try:
+                dept_agents = await integration.get_agents_in_department(assigned_department)
+                if dept_agents:
+                    # Use first agent from department
+                    agent = dept_agents[0]
+                    self._logger.info(
+                        f"Assigning to agent from department {assigned_department}: {agent['name']}",
+                        extra={
+                            "department": assigned_department,
+                            "agent_name": agent["name"],
+                            "rule_based": True,
+                        }
+                    )
+                    return agent, "rule_based_department"
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to get agents in department {assigned_department}: {e}",
+                    extra={"error": str(e)},
+                )
+
+        # No specific assignment from rules
+        return None, "availability_check"
+
     def set_integration(self, integration: BaseIntegration) -> None:
         """Set a custom helpdesk integration.
 
@@ -493,6 +705,73 @@ class HandoffOrchestrator:
             reasoning="Handoff initiated via create_handoff()",
         )
 
+        # Evaluate custom routing rules if enabled
+        if self._config.routing.enable_custom_routing and self._config.routing.custom_rules:
+            try:
+                self._logger.debug("Evaluating custom routing rules")
+                routing_result = await self._routing_engine.evaluate(context, decision, metadata)
+
+                if routing_result:
+                    self._logger.info(
+                        f"Routing rule matched: {routing_result.rule_name}",
+                        extra={
+                            "rule_name": routing_result.rule_name,
+                            "actions_applied": len(routing_result.actions_applied),
+                            "execution_time_ms": routing_result.execution_time_ms,
+                        }
+                    )
+
+                    # Store routing metadata
+                    if "routing" not in metadata:
+                        metadata["routing"] = {}
+                    metadata["routing"]["rule_based"] = {
+                        "rule_name": routing_result.rule_name,
+                        "actions_applied": [action.type for action in routing_result.actions_applied],
+                        "execution_time_ms": routing_result.execution_time_ms,
+                    }
+
+                    # Check if we should use fallback routing
+                    if routing_result.routing_decision == "fallback":
+                        self._logger.info("Routing rule requested fallback")
+                        metadata["routing"]["use_fallback"] = True
+
+                    # Check if we have a specific assignment
+                    assigned_agent = routing_result.get_assigned_agent()
+                    assigned_queue = routing_result.get_assigned_queue()
+                    assigned_department = routing_result.get_assigned_department()
+                    new_priority = routing_result.get_priority()
+
+                    if assigned_agent:
+                        metadata["routing"]["assigned_agent"] = assigned_agent
+                    if assigned_queue:
+                        metadata["routing"]["assigned_queue"] = assigned_queue
+                    if assigned_department:
+                        metadata["routing"]["assigned_department"] = assigned_department
+                    if new_priority:
+                        decision.priority = new_priority
+                        metadata["routing"]["priority"] = new_priority.value
+
+                    # Add tags from routing
+                    tags = routing_result.get_tags()
+                    if tags:
+                        existing_tags = metadata.get("tags", [])
+                        if not isinstance(existing_tags, list):
+                            existing_tags = []
+                        existing_tags.extend(tags)
+                        metadata["tags"] = list(set(existing_tags))  # Remove duplicates
+
+                    # Stop here if rule requested fallback
+                    if routing_result.routing_decision == "fallback":
+                        # Will be handled by fallback logic later
+                        pass
+
+            except Exception as e:
+                self._logger.warning(
+                    f"Routing rule evaluation failed: {e}",
+                    extra={"error": str(e)},
+                )
+                # Continue with normal routing on error
+
         # Try to use the configured integration
         integration = await self._get_integration()
         if integration is not None:
@@ -501,11 +780,18 @@ class HandoffOrchestrator:
                 available_agents = await self._check_agent_availability_with_fallback(integration)
 
                 if available_agents:
-                    # Use round-robin assignment if enabled
+                    # Check for rule-based assignment first
                     assigned_agent = None
                     assignment_method = "availability_check"
 
-                    if self._config.routing.round_robin_enabled:
+                    # Try rule-based routing
+                    rule_assigned_agent, rule_method = await self._handle_rule_based_routing(
+                        integration, available_agents, context, decision
+                    )
+                    if rule_assigned_agent:
+                        assigned_agent = rule_assigned_agent
+                        assignment_method = rule_method
+                    elif self._config.routing.round_robin_enabled:
                         try:
                             assigner = self._get_round_robin_assigner(integration.integration_name)
                             selected_agent = await assigner.select_agent(
@@ -586,6 +872,19 @@ class HandoffOrchestrator:
                                 }
                             )
 
+                            # Try to convert ticket to unassigned if supported
+                            if hasattr(integration, 'convert_to_unassigned'):
+                                try:
+                                    await integration.convert_to_unassigned(
+                                        result.ticket_id,
+                                        "agent_assignment_failed"
+                                    )
+                                except Exception as convert_error:
+                                    self._logger.warning(
+                                        f"Failed to convert ticket to unassigned: {convert_error}",
+                                        extra={"ticket_id": result.ticket_id}
+                                    )
+
                     # Add availability info to result metadata
                     if result.metadata is None:
                         result.metadata = {}
@@ -603,8 +902,15 @@ class HandoffOrchestrator:
                         extra={"agent_count": 0}
                     )
 
-                    # Create ticket without agent assignment
-                    result = await integration.create_ticket(context, decision)
+                    # Use create_unassigned_ticket if supported, otherwise regular create_ticket
+                    if "create_unassigned_ticket" in integration.supported_features:
+                        result = await integration.create_unassigned_ticket(
+                            context,
+                            decision,
+                            "no_agents_available"
+                        )
+                    else:
+                        result = await integration.create_ticket(context, decision)
 
                     # Add availability info to result metadata
                     if result.metadata is None:
@@ -621,19 +927,38 @@ class HandoffOrchestrator:
 
             except Exception as e:
                 self._logger.error(f"Integration error: {e}")
-                result = HandoffResult(
-                    success=False,
-                    status=HandoffStatus.PENDING,
-                    error_message=f"Integration error: {e}",
-                    metadata=metadata,
-                )
+
+                # Create fallback ticket for integration errors
+                try:
+                    result = await self._create_fallback_ticket(
+                        integration.integration_name,
+                        context,
+                        decision,
+                        FallbackReason.INTEGRATION_ERROR,
+                        str(e)
+                    )
+                except Exception as fallback_error:
+                    self._logger.error(f"Failed to create fallback ticket: {fallback_error}")
+                    # If fallback also fails, return error result
+                    result = HandoffResult(
+                        success=False,
+                        status=HandoffStatus.FAILED,
+                        error_message=f"Integration error: {e}",
+                        metadata=metadata,
+                    )
         else:
-            # No integration available - return pending result
-            result = HandoffResult(
-                success=False,
-                status=HandoffStatus.PENDING,
-                error_message=f"No {self._helpdesk} integration configured",
-                metadata=metadata,
+            # No integration available - create fallback ticket
+            self._logger.warning(
+                f"No {self._helpdesk} integration configured, creating fallback ticket"
+            )
+
+            # Create fallback ticket
+            result = await self._create_fallback_ticket(
+                self._helpdesk,
+                context,
+                decision,
+                FallbackReason.INTEGRATION_OFFLINE,
+                f"No {self._helpdesk} integration configured"
             )
 
         # Log the result
@@ -693,3 +1018,120 @@ class HandoffOrchestrator:
                 }
             )
             return []
+
+    async def _create_fallback_ticket(
+        self,
+        integration_name: str,
+        context: ConversationContext,
+        decision: HandoffDecision,
+        fallback_reason: FallbackReason,
+        error_details: Optional[str] = None,
+    ) -> HandoffResult:
+        """Create a fallback ticket when integration is unavailable.
+
+        Args:
+            integration_name: Name of the target integration
+            context: Conversation context
+            decision: Handoff decision
+            fallback_reason: Why fallback was used
+            error_details: Optional error details
+
+        Returns:
+            HandoffResult with fallback ticket details
+        """
+        try:
+            # Generate fallback ID
+            fallback_id = f"fb-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+
+            # Create fallback ticket
+            ticket_data = {
+                "subject": f"Handoff: {decision.trigger_results[0].trigger_type if decision.trigger_results else 'manual'}",
+                "body": self._format_conversation_summary(context),
+                "priority": decision.priority.value,
+                "user_id": context.user_id,
+                "metadata": context.metadata,
+            }
+
+            fallback_ticket = FallbackTicket(
+                fallback_id=fallback_id,
+                handoff_id=f"handoff-{datetime.now(timezone.utc).timestamp()}",
+                integration_name=integration_name,
+                ticket_data=ticket_data,
+                fallback_reason=fallback_reason,
+                priority=decision.priority,
+                created_at=datetime.now(timezone.utc),
+                error_details=error_details,
+                original_context=context.model_dump(),
+                metadata={
+                    "fallback_creation_time": datetime.now(timezone.utc).isoformat(),
+                    "retry_count": 0,
+                },
+            )
+
+            # Save to storage
+            await self._fallback_storage.save_ticket(fallback_ticket)
+
+            # Add to retry queue
+            await self._fallback_retry_queue.enqueue(fallback_ticket)
+
+            # Notify user
+            user_message = await self._fallback_notifier.notify_user(fallback_ticket)
+
+            self._logger.info(
+                "Fallback ticket created",
+                extra={
+                    "fallback_id": fallback_id,
+                    "integration": integration_name,
+                    "reason": fallback_reason.value,
+                    "user_message": user_message,
+                }
+            )
+
+            return HandoffResult(
+                success=True,
+                handoff_id=fallback_id,
+                status=HandoffStatus.PENDING,
+                ticket_id=fallback_id,
+                ticket_url=None,  # No URL for local fallback tickets
+                metadata={
+                    "fallback_ticket": fallback_ticket.model_dump(),
+                    "fallback_reason": fallback_reason.value,
+                    "assignment_method": "fallback_local_storage",
+                    "user_notification": user_message,
+                    "retry_scheduled": True,
+                },
+            )
+
+        except Exception as e:
+            error_msg = f"Failed to create fallback ticket: {e}"
+            self._logger.error(error_msg, extra={"error": str(e)})
+
+            return HandoffResult(
+                success=False,
+                status=HandoffStatus.FAILED,
+                error_message=error_msg,
+            )
+
+    def _format_conversation_summary(self, context: ConversationContext) -> str:
+        """Format conversation as summary text for fallback ticket.
+
+        Args:
+            context: Conversation context
+
+        Returns:
+            Formatted summary
+        """
+        lines = ["Conversation Summary:"]
+
+        # Add summary if available
+        summary = context.metadata.get("conversation_summary", {})
+        if isinstance(summary, dict) and summary.get("summary_text"):
+            lines.append(f"Summary: {summary['summary_text']}")
+
+        # Add recent messages
+        lines.append("\nRecent Messages:")
+        for msg in context.messages[-5:]:  # Last 5 messages
+            speaker = msg.speaker.value.title()
+            lines.append(f"{speaker}: {msg.content}")
+
+        return "\n".join(lines)

@@ -715,3 +715,200 @@ class ZendeskIntegration(BaseIntegration):
             Number of pending retry items.
         """
         return len(self._retry_queue)
+
+    # Fallback ticket creation methods
+    async def create_unassigned_ticket(
+        self,
+        context: ConversationContext,
+        decision: HandoffDecision,
+        fallback_reason: str,
+    ) -> HandoffResult:
+        """Create a Zendesk ticket without agent assignment.
+
+        Args:
+            context: Conversation context
+            decision: Handoff decision
+            fallback_reason: Why fallback was used
+
+        Returns:
+            HandoffResult with unassigned ticket details
+        """
+        try:
+            logger.info(
+                "Creating unassigned Zendesk ticket",
+                extra={
+                    "fallback_reason": fallback_reason,
+                    "priority": decision.priority.value,
+                }
+            )
+
+            # Format ticket body
+            ticket_body = self._format_ticket_body(context, decision)
+
+            # Build ticket payload without assignee
+            payload = {
+                "ticket": {
+                    "subject": f"[Fallback] Handoff: {decision.trigger_results[0].trigger_type if decision.trigger_results else 'manual'}",
+                    "comment": {
+                        "body": ticket_body,
+                        "public": False,  # Internal note
+                    },
+                    "priority": self._map_priority_to_zendesk(decision.priority),
+                    "tags": [
+                        "handoffkit",
+                        "fallback",
+                        f"fallback_reason:{fallback_reason.lower().replace('_', '-')}",
+                    ],
+                }
+            }
+
+            # Add requester if available
+            user_id = context.user_id or context.metadata.get("user_id", "unknown")
+            if "@" in str(user_id):
+                payload["ticket"]["requester"] = {"email": user_id}
+            else:
+                payload["ticket"]["requester"] = {"email": f"user-{user_id}@handoff.local"}
+
+            response = await self._client.post("/tickets.json", json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+            ticket = data["ticket"]
+            ticket_id = str(ticket["id"])
+            ticket_url = f"https://{self._subdomain}.zendesk.com/agent/tickets/{ticket['id']}"
+
+            logger.info(f"Created unassigned Zendesk ticket: {ticket_id}")
+
+            return HandoffResult(
+                success=True,
+                handoff_id=str(uuid.uuid4()),
+                status=HandoffStatus.PENDING,
+                ticket_id=ticket_id,
+                ticket_url=ticket_url,
+                metadata={
+                    "zendesk_ticket": ticket,
+                    "fallback_reason": fallback_reason,
+                    "assignment_method": "unassigned_fallback",
+                },
+            )
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to create unassigned Zendesk ticket: {error_msg}")
+
+            return HandoffResult(
+                success=False,
+                status=HandoffStatus.FAILED,
+                error_message=error_msg,
+            )
+
+        except Exception as e:
+            error_msg = f"Unexpected error creating unassigned ticket: {e}"
+            logger.error(error_msg)
+
+            return HandoffResult(
+                success=False,
+                status=HandoffStatus.FAILED,
+                error_message=error_msg,
+            )
+
+    async def convert_to_unassigned(
+        self,
+        ticket_id: str,
+        fallback_reason: str,
+    ) -> bool:
+        """Convert a Zendesk ticket to unassigned.
+
+        Args:
+            ticket_id: ID of the ticket to convert
+            fallback_reason: Why the conversion is needed
+
+        Returns:
+            True if conversion succeeded
+        """
+        try:
+            logger.info(
+                "Converting Zendesk ticket to unassigned",
+                extra={
+                    "ticket_id": ticket_id,
+                    "fallback_reason": fallback_reason,
+                }
+            )
+
+            # Update ticket to remove assignee
+            payload = {
+                "ticket": {
+                    "assignee_id": None,  # Remove assignment
+                    "comment": {
+                        "body": f"Ticket converted to unassigned due to: {fallback_reason}",
+                        "public": False,
+                    },
+                    "tags": [f"converted_unassigned", f"fallback_reason:{fallback_reason.lower().replace('_', '-')}"],
+                }
+            }
+
+            response = await self._client.put(f"/tickets/{ticket_id}.json", json=payload)
+            response.raise_for_status()
+
+            logger.info(f"Successfully converted ticket {ticket_id} to unassigned")
+            return True
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to convert ticket to unassigned: {error_msg}")
+            return False
+
+        except Exception as e:
+            error_msg = f"Unexpected error converting ticket to unassigned: {e}"
+            logger.error(error_msg)
+            return False
+
+    async def retry_assignment(
+        self,
+        ticket_id: str,
+        agent_id: str,
+    ) -> bool:
+        """Retry assigning a Zendesk ticket to an agent.
+
+        Args:
+            ticket_id: ID of the ticket to assign
+            agent_id: ID of the agent to assign to
+
+        Returns:
+            True if assignment succeeded
+        """
+        try:
+            logger.info(
+                "Retrying Zendesk ticket assignment",
+                extra={
+                    "ticket_id": ticket_id,
+                    "agent_id": agent_id,
+                }
+            )
+
+            # Assign ticket to agent
+            payload = {
+                "ticket": {
+                    "assignee_id": int(agent_id),
+                    "comment": {
+                        "body": f"Ticket assigned to agent {agent_id} after retry",
+                        "public": False,
+                    },
+                }
+            }
+
+            response = await self._client.put(f"/tickets/{ticket_id}.json", json=payload)
+            response.raise_for_status()
+
+            logger.info(f"Successfully assigned ticket {ticket_id} to agent {agent_id}")
+            return True
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to retry ticket assignment: {error_msg}")
+            return False
+
+        except Exception as e:
+            error_msg = f"Unexpected error retrying assignment: {e}"
+            logger.error(error_msg)
+            return False

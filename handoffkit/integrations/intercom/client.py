@@ -909,3 +909,191 @@ class IntercomIntegration(BaseIntegration):
             Number of pending retry items.
         """
         return len(self._retry_queue)
+
+    # Fallback ticket creation methods
+    async def create_unassigned_ticket(
+        self,
+        context: ConversationContext,
+        decision: HandoffDecision,
+        fallback_reason: str,
+    ) -> HandoffResult:
+        """Create an Intercom conversation without assignment.
+
+        Args:
+            context: Conversation context
+            decision: Handoff decision
+            fallback_reason: Why fallback was used
+
+        Returns:
+            HandoffResult with unassigned conversation details
+        """
+        try:
+            logger.info(
+                "Creating unassigned Intercom conversation",
+                extra={
+                    "fallback_reason": fallback_reason,
+                    "priority": decision.priority.value,
+                }
+            )
+
+            # Build conversation data
+            user_id = context.user_id or context.metadata.get("user_id", str(uuid.uuid4()))
+            conversation_body = self._format_conversation_body(context, decision)
+
+            # Create conversation payload
+            payload = {
+                "from": {
+                    "type": "user",
+                    "id": user_id,
+                },
+                "body": conversation_body,
+                "message_type": "inbox",
+                "tags": [
+                    "handoffkit",
+                    "fallback",
+                    f"fallback_reason:{fallback_reason.lower().replace('_', '-')}",
+                ],
+            }
+
+            # Create conversation
+            response = await self._client.post("/conversations", json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+            conversation_id = data["id"]
+            conversation_url = f"https://app.intercom.com/a/inbox/{self._app_id}/inbox/admin/conversation/{conversation_id}"
+
+            logger.info(f"Created unassigned Intercom conversation: {conversation_id}")
+
+            return HandoffResult(
+                success=True,
+                handoff_id=str(uuid.uuid4()),
+                status=HandoffStatus.PENDING,
+                ticket_id=conversation_id,
+                ticket_url=conversation_url,
+                metadata={
+                    "intercom_conversation": data,
+                    "fallback_reason": fallback_reason,
+                    "assignment_method": "unassigned_fallback",
+                },
+            )
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to create unassigned Intercom conversation: {error_msg}")
+
+            return HandoffResult(
+                success=False,
+                status=HandoffStatus.FAILED,
+                error_message=error_msg,
+            )
+
+        except Exception as e:
+            error_msg = f"Unexpected error creating unassigned conversation: {e}"
+            logger.error(error_msg)
+
+            return HandoffResult(
+                success=False,
+                status=HandoffStatus.FAILED,
+                error_message=error_msg,
+            )
+
+    async def convert_to_unassigned(
+        self,
+        ticket_id: str,
+        fallback_reason: str,
+    ) -> bool:
+        """Convert an Intercom conversation to unassigned.
+
+        Args:
+            ticket_id: ID of the conversation to convert
+            fallback_reason: Why the conversion is needed
+
+        Returns:
+            True if conversion succeeded
+        """
+        try:
+            logger.info(
+                "Converting Intercom conversation to unassigned",
+                extra={
+                    "conversation_id": ticket_id,
+                    "fallback_reason": fallback_reason,
+                }
+            )
+
+            # Add internal note about conversion
+            note_payload = {
+                "body": f"Conversation converted to unassigned due to: {fallback_reason}",
+                "type": "note",
+                "tags": ["converted_unassigned", f"fallback_reason:{fallback_reason.lower().replace('_', '-')}"],
+            }
+
+            response = await self._client.post(f"/conversations/{ticket_id}/messages", json=note_payload)
+            response.raise_for_status()
+
+            # Note: Intercom doesn't have a direct "unassign" API
+            # The conversation remains in the inbox for any admin to pick up
+            logger.info(f"Successfully converted conversation {ticket_id} to unassigned")
+            return True
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to convert conversation to unassigned: {error_msg}")
+            return False
+
+        except Exception as e:
+            error_msg = f"Unexpected error converting conversation to unassigned: {e}"
+            logger.error(error_msg)
+            return False
+
+    async def retry_assignment(
+        self,
+        ticket_id: str,
+        agent_id: str,
+    ) -> bool:
+        """Retry assigning an Intercom conversation to an admin.
+
+        Args:
+            ticket_id: ID of the conversation to assign
+            agent_id: ID of the admin to assign to
+
+        Returns:
+            True if assignment succeeded
+        """
+        try:
+            logger.info(
+                "Retrying Intercom conversation assignment",
+                extra={
+                    "conversation_id": ticket_id,
+                    "admin_id": agent_id,
+                }
+            )
+
+            # Assign conversation to admin
+            assign_payload = {
+                "admin_id": agent_id,
+            }
+
+            response = await self._client.put(f"/conversations/{ticket_id}/assign", json=assign_payload)
+            response.raise_for_status()
+
+            # Add note about assignment
+            note_payload = {
+                "body": f"Conversation assigned to admin {agent_id} after retry",
+                "type": "note",
+            }
+
+            await self._client.post(f"/conversations/{ticket_id}/messages", json=note_payload)
+
+            logger.info(f"Successfully assigned conversation {ticket_id} to admin {agent_id}")
+            return True
+
+        except httpx.HTTPStatusError as e:
+            error_msg = self._handle_http_error(e)
+            logger.error(f"Failed to retry conversation assignment: {error_msg}")
+            return False
+
+        except Exception as e:
+            error_msg = f"Unexpected error retrying assignment: {e}"
+            logger.error(error_msg)
+            return False
