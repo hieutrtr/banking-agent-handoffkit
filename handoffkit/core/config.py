@@ -23,6 +23,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from handoffkit.routing.models import RoutingRule
+
 
 class TriggerConfig(BaseModel):
     """Configuration for handoff triggers.
@@ -169,6 +171,10 @@ class RoutingConfig(BaseModel):
         round_robin_rotation_window_minutes: Minutes to wait before reassigning to same agent
         round_robin_history_size: Maximum number of assignments to track (100-10000)
         round_robin_fallback_retry_attempts: Number of retry attempts on assignment failure
+        custom_rules: List of custom routing rules for advanced routing logic
+        enable_custom_routing: Enable custom routing rules evaluation
+        max_rule_evaluation_time_ms: Maximum time for rule evaluation (10-1000)
+        rule_evaluation_cache_ttl: Cache TTL for rule evaluations (60-3600)
 
     Example:
         >>> config = RoutingConfig(strategy="least_busy")
@@ -215,6 +221,27 @@ class RoutingConfig(BaseModel):
         ge=0,
         le=10,
         description="Number of retry attempts when round-robin assignment fails (0-10)",
+    )
+    # Custom routing rules configuration
+    custom_rules: list[RoutingRule] = Field(
+        default_factory=list,
+        description="Custom routing rules for advanced routing logic",
+    )
+    enable_custom_routing: bool = Field(
+        default=True,
+        description="Enable evaluation of custom routing rules",
+    )
+    max_rule_evaluation_time_ms: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Maximum time allowed for rule evaluation in milliseconds",
+    )
+    rule_evaluation_cache_ttl: int = Field(
+        default=300,
+        ge=60,
+        le=3600,
+        description="Cache TTL for rule evaluations in seconds",
     )
 
 

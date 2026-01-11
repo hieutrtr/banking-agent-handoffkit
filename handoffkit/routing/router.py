@@ -1,10 +1,12 @@
 """Agent router for intelligent handoff routing."""
 
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from handoffkit.core.config import RoutingConfig
 from handoffkit.core.types import ConversationContext, HandoffDecision, HandoffResult
 from handoffkit.routing.strategies import BaseStrategy, RoundRobinStrategy
+
+if TYPE_CHECKING:
+    from handoffkit.core.config import RoutingConfig
 
 
 class AgentRouter:
@@ -17,12 +19,14 @@ class AgentRouter:
     - Department/skill matching
     """
 
-    def __init__(self, config: Optional[RoutingConfig] = None) -> None:
+    def __init__(self, config: Optional[Any] = None) -> None:
         """Initialize agent router.
 
         Args:
             config: Routing configuration.
         """
+        # Import here to avoid circular imports
+        from handoffkit.core.config import RoutingConfig
         self._config = config or RoutingConfig()
         self._strategy = self._create_strategy(self._config.strategy)
         self._availability_cache: dict[str, Any] = {}
