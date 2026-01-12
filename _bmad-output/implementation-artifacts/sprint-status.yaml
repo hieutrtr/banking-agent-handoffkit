@@ -63,7 +63,7 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3: Context Preservation & Helpdesk Integration
-  epic-3: in-progress
+  epic-3: done
   3-1-conversation-history-packaging: done
   3-2-metadata-collection: done
   3-3-entity-extraction: done
@@ -74,12 +74,12 @@ development_status:
   3-8-agent-availability-checking: done
   3-9-round-robin-agent-distribution: done
   3-10-fallback-ticket-creation: done
-  3-11-configurable-routing-rules: ready-for-dev
+  3-11-configurable-routing-rules: done
   epic-3-retrospective: optional
 
   # Epic 4: REST API & External Integration
-  epic-4: backlog
-  4-1-fastapi-application-setup: backlog
+  epic-4: in-progress
+  4-1-fastapi-application-setup: ready-for-dev
   4-2-check-endpoint-post-api-v1-check: backlog
   4-3-handoff-endpoint-post-api-v1-handoff: backlog
   4-4-status-endpoint-get-api-v1-handoff-id: backlog
