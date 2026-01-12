@@ -28,6 +28,7 @@ from handoffkit.api.config import get_api_settings, validate_api_settings
 from handoffkit.api.exceptions import setup_exception_handlers
 from handoffkit.api.models.responses import HealthStatus
 from handoffkit.api.routes.health import router as health_router
+from handoffkit.api.routes.check import router as check_router
 
 
 # Configure logging
@@ -161,6 +162,9 @@ including conversation monitoring, handoff creation, and status tracking.
 
     # Include health check router
     app.include_router(health_router)
+
+    # Include check router
+    app.include_router(check_router)
 
     # Root endpoint
     @app.get(
