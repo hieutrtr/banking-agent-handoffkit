@@ -12,8 +12,9 @@ from handoffkit.api.exceptions import (
     HelpdeskIntegrationError,
 )
 from handoffkit.api.models.requests import ConversationMessage, CreateHandoffRequest
-from handoffkit.api.models.responses import HandoffResponse, ErrorResponse
+from handoffkit.api.models.responses import HandoffResponse, HandoffStatusResponse, ErrorResponse
 from handoffkit.core.types import ConversationContext, HandoffDecision, HandoffPriority, Message, Speaker
+from handoffkit.storage import get_handoff_storage
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,8 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
     1. Create a handoff record
     2. Apply routing rules (if enabled)
     3. Create a helpdesk ticket (if configured)
-    4. Return the handoff details for tracking
+    4. Store the handoff for status tracking
+    5. Return the handoff details for tracking
 
     Args:
         request: CreateHandoffRequest containing conversation and handoff details
@@ -149,6 +151,7 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
         result = await orchestrator.create_handoff(context, decision)
 
         # Extract handoff details
+        handoff_status = result.status.value if result else "pending"
         ticket_id = result.ticket_id if result else None
         ticket_url = result.ticket_url if result else None
         assigned_agent = None
@@ -165,11 +168,13 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
 
             routing_rule = result.metadata.get("routing_rule")
 
+        created_at = datetime.now(timezone.utc)
+
         logger.info(
             f"Handoff {handoff_id} created successfully",
             extra={
                 "handoff_id": handoff_id,
-                "status": result.status.value if result else "pending",
+                "status": handoff_status,
                 "ticket_id": ticket_id,
                 "assigned_agent": assigned_agent,
                 "assigned_queue": assigned_queue,
@@ -177,9 +182,39 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
             }
         )
 
+        # Store handoff for status tracking
+        try:
+            storage = get_handoff_storage()
+            await storage.save(handoff_id, {
+                "handoff_id": handoff_id,
+                "conversation_id": request.conversation_id,
+                "user_id": request.user_id,
+                "priority": priority.value,
+                "status": handoff_status,
+                "ticket_id": ticket_id,
+                "ticket_url": ticket_url,
+                "assigned_agent": assigned_agent,
+                "assigned_queue": assigned_queue,
+                "routing_rule": routing_rule,
+                "metadata": request.metadata or {},
+                "history": [
+                    {
+                        "status": handoff_status,
+                        "timestamp": created_at.isoformat()
+                    }
+                ]
+            })
+            logger.info(f"Handoff {handoff_id} stored for status tracking")
+        except Exception as storage_error:
+            logger.warning(
+                f"Failed to store handoff {handoff_id}: {storage_error}",
+                extra={"handoff_id": handoff_id}
+            )
+            # Don't fail the handoff creation if storage fails
+
         return HandoffResponse(
             handoff_id=handoff_id,
-            status=result.status.value if result else "pending",
+            status=handoff_status,
             conversation_id=request.conversation_id,
             user_id=request.user_id,
             priority=priority.value,
@@ -188,7 +223,7 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
             assigned_agent=assigned_agent,
             assigned_queue=assigned_queue,
             routing_rule=routing_rule,
-            created_at=datetime.now(timezone.utc),
+            created_at=created_at,
             metadata={}
         )
 
@@ -226,14 +261,14 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
 
 @router.get(
     "/handoff/{handoff_id}",
-    response_model=HandoffResponse,
+    response_model=HandoffStatusResponse,
     summary="Get Handoff Status",
     description="Get the status of an existing handoff.",
     responses={
         404: {"model": ErrorResponse, "description": "Handoff not found"}
     }
 )
-async def get_handoff_status(handoff_id: str) -> HandoffResponse:
+async def get_handoff_status(handoff_id: str) -> HandoffStatusResponse:
     """Get the status of an existing handoff.
 
     This endpoint retrieves the current status of a handoff that was
@@ -243,21 +278,165 @@ async def get_handoff_status(handoff_id: str) -> HandoffResponse:
         handoff_id: The unique handoff identifier
 
     Returns:
-        HandoffResponse with current handoff status
+        HandoffStatusResponse with current handoff status
     """
     logger.info(
         f"Getting status for handoff {handoff_id}",
         extra={"handoff_id": handoff_id}
     )
 
-    # TODO: Implement handoff storage and retrieval
-    # For now, return a placeholder response
-    # This will be implemented in Story 4-4
+    try:
+        # Get handoff from storage
+        storage = get_handoff_storage()
+        data = await storage.get(handoff_id)
 
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Handoff with ID '{handoff_id}' not found. Handoff storage will be implemented in a future update."
+        if not data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Handoff with ID '{handoff_id}' not found"
+            )
+
+        # Build history
+        history = data.get("history", [])
+
+        # Handle created_at
+        created_at = data.get("created_at")
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        elif created_at is None:
+            created_at = datetime.now(timezone.utc)
+
+        # Handle updated_at
+        updated_at = data.get("updated_at")
+        if isinstance(updated_at, str):
+            updated_at = datetime.fromisoformat(updated_at)
+
+        return HandoffStatusResponse(
+            handoff_id=data.get("handoff_id", handoff_id),
+            status=data.get("status", "pending"),
+            conversation_id=data.get("conversation_id", ""),
+            priority=data.get("priority", "MEDIUM"),
+            created_at=created_at,
+            updated_at=updated_at,
+            assigned_agent=data.get("assigned_agent"),
+            ticket_id=data.get("ticket_id"),
+            ticket_url=data.get("ticket_url"),
+            resolution=data.get("resolution"),
+            history=history
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error retrieving handoff {handoff_id}: {e}",
+            extra={"handoff_id": handoff_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving handoff status: {str(e)}"
+        )
+
+
+@router.get(
+    "/handoff",
+    response_model=Dict[str, Any],
+    summary="List Handoffs",
+    description="List handoffs with pagination.",
+    responses={
+        500: {"model": ErrorResponse, "description": "Storage error"}
+    }
+)
+async def list_handoffs(
+    limit: int = 20,
+    offset: int = 0
+) -> Dict[str, Any]:
+    """List all handoffs with pagination.
+
+    Args:
+        limit: Maximum number of results (default 20, max 100)
+        offset: Offset for pagination
+
+    Returns:
+        Dictionary with handoffs list and pagination info
+    """
+    logger.info(
+        f"Listing handoffs (limit={limit}, offset={offset})"
     )
+
+    try:
+        storage = get_handoff_storage()
+        handoffs = await storage.list_all(limit=limit, offset=offset)
+        total = await storage.count()
+
+        # Convert datetime fields
+        for h in handoffs:
+            if "created_at" in h and isinstance(h["created_at"], str):
+                h["created_at"] = h["created_at"]
+            if "updated_at" in h and isinstance(h["updated_at"], str):
+                h["updated_at"] = h["updated_at"]
+
+        return {
+            "handoffs": handoffs,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_next": offset + len(handoffs) < total,
+            "has_previous": offset > 0
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing handoffs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing handoffs: {str(e)}"
+        )
+
+
+@router.get(
+    "/conversation/{conversation_id}/handoffs",
+    response_model=List[Dict[str, Any]],
+    summary="List Handoffs by Conversation",
+    description="List all handoffs for a specific conversation."
+)
+async def list_conversation_handoffs(
+    conversation_id: str,
+    limit: int = 10
+) -> list[Dict[str, Any]]:
+    """List all handoffs for a specific conversation.
+
+    Args:
+        conversation_id: Conversation identifier
+        limit: Maximum number of results
+
+    Returns:
+        List of handoff data dictionaries
+    """
+    logger.info(
+        f"Listing handoffs for conversation {conversation_id}"
+    )
+
+    try:
+        storage = get_handoff_storage()
+        handoffs = await storage.list_by_conversation(conversation_id, limit=limit)
+
+        # Convert datetime fields
+        for h in handoffs:
+            if "created_at" in h and isinstance(h["created_at"], str):
+                h["created_at"] = h["created_at"]
+            if "updated_at" in h and isinstance(h["updated_at"], str):
+                h["updated_at"] = h["updated_at"]
+
+        return handoffs
+
+    except Exception as e:
+        logger.error(
+            f"Error listing handoffs for conversation {conversation_id}: {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing handoffs: {str(e)}"
+        )
 
 
 @router.delete(
@@ -286,10 +465,46 @@ async def cancel_handoff(handoff_id: str) -> dict:
         extra={"handoff_id": handoff_id}
     )
 
-    # TODO: Implement handoff cancellation
-    # This will be implemented in a future update
+    try:
+        storage = get_handoff_storage()
 
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Handoff with ID '{handoff_id}' not found. Handoff cancellation will be implemented in a future update."
-    )
+        # Check if handoff exists
+        handoff = await storage.get(handoff_id)
+        if not handoff:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Handoff with ID '{handoff_id}' not found"
+            )
+
+        # Update status to cancelled
+        updated = await storage.update_status(
+            handoff_id,
+            "cancelled",
+            {"resolution": "Cancelled by user"}
+        )
+
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Failed to cancel handoff"
+            )
+
+        logger.info(f"Handoff {handoff_id} cancelled successfully")
+
+        return {
+            "message": f"Handoff {handoff_id} has been cancelled",
+            "handoff_id": handoff_id,
+            "status": "cancelled"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error cancelling handoff {handoff_id}: {e}",
+            extra={"handoff_id": handoff_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error cancelling handoff: {str(e)}"
+        )
