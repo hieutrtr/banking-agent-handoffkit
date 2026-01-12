@@ -80,8 +80,9 @@ development_status:
   # Epic 4: REST API & External Integration
   epic-4: in-progress
   4-1-fastapi-application-setup: done
-  4-2-check-endpoint-post-api-v1-check: ready-for-dev
-  4-3-handoff-endpoint-post-api-v1-handoff: backlog
+  4-2-check-endpoint-post-api-v1-check: done
+  4-3-handoff-endpoint-post-api-v1-handoff: ready-for-dev
+  4-4-status-endpoint-get-api-v1-handoff-id: backlog
   4-4-status-endpoint-get-api-v1-handoff-id: backlog
   4-5-openapi-documentation: backlog
   4-6-api-key-authentication: backlog
