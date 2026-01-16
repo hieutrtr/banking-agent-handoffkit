@@ -5,8 +5,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 
+from handoffkit.api.auth import get_api_key
+from handoffkit.api.models.auth import APIKey
 from handoffkit.api.exceptions import (
     HandoffCreationError,
     HelpdeskIntegrationError,
@@ -82,7 +84,10 @@ def convert_priority(priority: Optional[str]) -> HandoffPriority:
         502: {"model": ErrorResponse, "description": "Helpdesk integration error"}
     }
 )
-async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
+async def create_handoff(
+    request: CreateHandoffRequest,
+    api_key: APIKey = Depends(get_api_key)
+) -> HandoffResponse:
     """Create a new handoff to a human agent.
 
     This endpoint creates a new handoff based on the provided conversation
@@ -268,7 +273,10 @@ async def create_handoff(request: CreateHandoffRequest) -> HandoffResponse:
         404: {"model": ErrorResponse, "description": "Handoff not found"}
     }
 )
-async def get_handoff_status(handoff_id: str) -> HandoffStatusResponse:
+async def get_handoff_status(
+    handoff_id: str,
+    api_key: APIKey = Depends(get_api_key)
+) -> HandoffStatusResponse:
     """Get the status of an existing handoff.
 
     This endpoint retrieves the current status of a handoff that was
@@ -349,7 +357,8 @@ async def get_handoff_status(handoff_id: str) -> HandoffStatusResponse:
 )
 async def list_handoffs(
     limit: int = 20,
-    offset: int = 0
+    offset: int = 0,
+    api_key: APIKey = Depends(get_api_key)
 ) -> Dict[str, Any]:
     """List all handoffs with pagination.
 
@@ -401,7 +410,8 @@ async def list_handoffs(
 )
 async def list_conversation_handoffs(
     conversation_id: str,
-    limit: int = 10
+    limit: int = 10,
+    api_key: APIKey = Depends(get_api_key)
 ) -> list[Dict[str, Any]]:
     """List all handoffs for a specific conversation.
 
@@ -448,7 +458,10 @@ async def list_conversation_handoffs(
         422: {"model": ErrorResponse, "description": "Cancellation failed"}
     }
 )
-async def cancel_handoff(handoff_id: str) -> dict:
+async def cancel_handoff(
+    handoff_id: str,
+    api_key: APIKey = Depends(get_api_key)
+) -> dict:
     """Cancel an existing handoff.
 
     This endpoint cancels a handoff that was previously created.

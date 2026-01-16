@@ -4,11 +4,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 
+from handoffkit.api.auth import get_api_key
+from handoffkit.api.models.auth import APIKey
 from handoffkit.api.models.requests import CheckHandoffRequest, ConversationMessage
 from handoffkit.api.models.responses import CheckResult, ErrorResponse
-from handoffkit.core.types import ConversationContext, HandoffDecision, Message, Speaker
+from handoffkit.core.types import ConversationContext, HandoffDecision, HandoffPriority, Message, Speaker
 from handoffkit.core.exceptions import HandoffKitError
 
 logger = logging.getLogger(__name__)
@@ -60,7 +62,10 @@ def convert_api_context_to_core(
         500: {"model": ErrorResponse, "description": "Internal error"}
     }
 )
-async def check_handoff(request: CheckHandoffRequest) -> CheckResult:
+async def check_handoff(
+    request: CheckHandoffRequest,
+    api_key: APIKey = Depends(get_api_key)
+) -> CheckResult:
     """Check if a conversation should be handed off to a human agent.
 
     This endpoint evaluates a conversation and returns a recommendation
@@ -100,7 +105,7 @@ async def check_handoff(request: CheckHandoffRequest) -> CheckResult:
             should_handoff=False,
             confidence=0.0,
             reason="",
-            priority=type("Priority", (), {"value": "MEDIUM"})(),
+            priority=HandoffPriority.MEDIUM,
             trigger_results=[]
         )
 
@@ -152,7 +157,7 @@ async def check_handoff(request: CheckHandoffRequest) -> CheckResult:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Service configuration error: {str(e)}"
         )
-    except HandoffError as e:
+    except HandoffKitError as e:
         logger.warning(f"Handoff evaluation error: {e}")
         # Return a safe result on handoff-specific errors
         return CheckResult(
@@ -185,7 +190,8 @@ async def check_handoff(request: CheckHandoffRequest) -> CheckResult:
     }
 )
 async def check_handoff_batch(
-    requests: list[CheckHandoffRequest]
+    requests: list[CheckHandoffRequest],
+    api_key: APIKey = Depends(get_api_key)
 ) -> list[CheckResult]:
     """Check multiple conversations for handoff recommendations.
 

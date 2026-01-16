@@ -84,7 +84,7 @@ development_status:
   4-3-handoff-endpoint-post-api-v1-handoff: done
   4-4-status-endpoint-get-api-v1-handoff-id: done
   4-5-openapi-documentation: done
-  4-6-api-key-authentication: backlog
+  4-6-api-key-authentication: review
   4-7-rate-limiting: backlog
   epic-4-retrospective: optional
 
