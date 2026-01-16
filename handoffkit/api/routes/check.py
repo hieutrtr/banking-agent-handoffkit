@@ -1,6 +1,7 @@
 """Check endpoint for handoff decision evaluation."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, status
@@ -28,7 +29,7 @@ def convert_api_message_to_core(api_msg: ConversationMessage) -> Message:
     return Message(
         content=api_msg.content,
         speaker=speaker_enum,
-        timestamp=api_msg.timestamp or __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        timestamp=api_msg.timestamp or datetime.now(timezone.utc)
     )
 
 
