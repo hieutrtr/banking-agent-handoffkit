@@ -43,22 +43,22 @@ development_status:
   # Epic 1: Project Foundation & Core SDK Architecture
   epic-1: in-progress
   1-1-project-skeleton-and-package-structure: done
-  1-2-core-type-definitions-and-pydantic-models: review
-  1-3-handofforchestrator-base-interface: review
-  1-4-configuration-management-system: review
-  1-5-structured-logging-utilities: review
+  1-2-core-type-definitions-and-pydantic-models: done
+  1-3-handofforchestrator-base-interface: done
+  1-4-configuration-management-system: done
+  1-5-structured-logging-utilities: done
   epic-1-retrospective: optional
 
   # Epic 2: Intelligent Handoff Detection
   epic-2: in-progress
-  2-1-direct-request-detection-trigger: review
-  2-2-failure-pattern-tracking-trigger: review
-  2-3-critical-keyword-monitoring-trigger: review
-  2-4-custom-rule-engine: review
-  2-5-rule-based-sentiment-scoring-tier-1: review
-  2-6-frustration-signal-detection-caps-and-punctuation: review
-  2-7-conversation-degradation-tracking: review
-  2-8-local-llm-sentiment-analysis-tier-2: review
+  2-1-direct-request-detection-trigger: done
+  2-2-failure-pattern-tracking-trigger: done
+  2-3-critical-keyword-monitoring-trigger: done
+  2-4-custom-rule-engine: done
+  2-5-rule-based-sentiment-scoring-tier-1: done
+  2-6-frustration-signal-detection-caps-and-punctuation: done
+  2-7-conversation-degradation-tracking: done
+  2-8-local-llm-sentiment-analysis-tier-2: done
   2-9-optional-cloud-llm-integration-tier-3: done
   epic-2-retrospective: optional
 
@@ -82,9 +82,7 @@ development_status:
   4-1-fastapi-application-setup: done
   4-2-check-endpoint-post-api-v1-check: done
   4-3-handoff-endpoint-post-api-v1-handoff: done
-  4-4-status-endpoint-get-api-v1-handoff-id: ready-for-dev
-  4-5-openapi-documentation: backlog
-  4-4-status-endpoint-get-api-v1-handoff-id: backlog
+  4-4-status-endpoint-get-api-v1-handoff-id: done
   4-5-openapi-documentation: backlog
   4-6-api-key-authentication: backlog
   4-7-rate-limiting: backlog

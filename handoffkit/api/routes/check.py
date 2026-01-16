@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from handoffkit.api.models.requests import CheckHandoffRequest, ConversationMessage
 from handoffkit.api.models.responses import CheckResult, ErrorResponse
 from handoffkit.core.types import ConversationContext, HandoffDecision, Message, Speaker
-from handoffkit.exceptions import HandoffError
+from handoffkit.core.exceptions import HandoffKitError
 
 logger = logging.getLogger(__name__)
 

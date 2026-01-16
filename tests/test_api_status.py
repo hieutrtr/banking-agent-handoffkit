@@ -38,9 +38,11 @@ def app():
 
 
 @pytest.fixture
-def client(app):
-    """Create test client."""
-    return TestClient(app)
+def client(app, storage):
+    """Create test client with mocked storage."""
+    # Patch the get_handoff_storage function in the handoff route module
+    with patch("handoffkit.api.routes.handoff.get_handoff_storage", return_value=storage):
+        yield TestClient(app)
 
 
 class TestFileHandoffStorage:

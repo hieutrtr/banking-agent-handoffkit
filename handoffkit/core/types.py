@@ -43,6 +43,10 @@ class MessageSpeaker(str, Enum):
     SYSTEM = "system"
 
 
+# Alias for backward compatibility
+Speaker = MessageSpeaker
+
+
 class HandoffPriority(str, Enum):
     """Priority levels for handoff requests."""
 

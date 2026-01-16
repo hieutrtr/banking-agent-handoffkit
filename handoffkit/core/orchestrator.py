@@ -425,6 +425,7 @@ class HandoffOrchestrator:
         return None, "availability_check"
 
     def _get_round_robin_assigner(self, integration_name: str) -> RoundRobinAssigner:
+        """Get or create round-robin assigner for an integration.
 
         Args:
             integration_name: Name of the integration

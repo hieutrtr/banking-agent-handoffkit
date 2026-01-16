@@ -137,6 +137,17 @@ class HandoffResponse(BaseModel):
     }
 
 
+class HandoffHistoryItem(BaseModel):
+    """Item in handoff status history."""
+
+    status: str = Field(..., description="Status at this point in history")
+    timestamp: datetime = Field(..., description="Time of status change")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata for this history item"
+    )
+
+
 class HandoffStatusResponse(BaseModel):
     """Response model for handoff status endpoint."""
 
@@ -165,7 +176,7 @@ class HandoffStatusResponse(BaseModel):
         default=None,
         description="Resolution status if completed"
     )
-    history: List[Dict[str, Any]] = Field(
+    history: List[HandoffHistoryItem] = Field(
         default_factory=list,
         description="Handoff status history"
     )
