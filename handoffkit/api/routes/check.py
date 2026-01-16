@@ -7,6 +7,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, status, Depends
 
 from handoffkit.api.auth import get_api_key
+from handoffkit.api.limiter import check_rate_limit
 from handoffkit.api.models.auth import APIKey
 from handoffkit.api.models.requests import CheckHandoffRequest, ConversationMessage
 from handoffkit.api.models.responses import CheckResult, ErrorResponse
@@ -64,7 +65,8 @@ def convert_api_context_to_core(
 )
 async def check_handoff(
     request: CheckHandoffRequest,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> CheckResult:
     """Check if a conversation should be handed off to a human agent.
 
@@ -191,7 +193,8 @@ async def check_handoff(
 )
 async def check_handoff_batch(
     requests: list[CheckHandoffRequest],
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> list[CheckResult]:
     """Check multiple conversations for handoff recommendations.
 

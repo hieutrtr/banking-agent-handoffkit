@@ -49,6 +49,18 @@ class APISettings(BaseSettings):
         json_schema_extra={"enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]}
     )
 
+    # Rate Limiting
+    rate_limit_per_minute: int = Field(
+        default=100,
+        ge=1,
+        description="Rate limit requests per minute"
+    )
+    burst_allowance: int = Field(
+        default=10,
+        ge=1,
+        description="Burst allowance for rate limiting"
+    )
+
     # HandoffKit core settings
     default_priority: str = Field(
         default="MEDIUM",

@@ -84,8 +84,8 @@ development_status:
   4-3-handoff-endpoint-post-api-v1-handoff: done
   4-4-status-endpoint-get-api-v1-handoff-id: done
   4-5-openapi-documentation: done
-  4-6-api-key-authentication: review
-  4-7-rate-limiting: backlog
+  4-6-api-key-authentication: done
+  4-7-rate-limiting: done
   epic-4-retrospective: optional
 
   # Epic 5: Real-Time Dashboard Monitoring

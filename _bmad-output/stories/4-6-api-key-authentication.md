@@ -3,7 +3,7 @@
 ## Story Information
 **Story ID**: 4-6
 **Epic**: Epic 4 - REST API & External Integration
-**Status**: review
+**Status**: done
 **Priority**: High
 **Points**: 5
 

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 
 from handoffkit.api.auth import get_api_key
+from handoffkit.api.limiter import check_rate_limit
 from handoffkit.api.models.auth import APIKey
 from handoffkit.api.exceptions import (
     HandoffCreationError,
@@ -86,7 +87,8 @@ def convert_priority(priority: Optional[str]) -> HandoffPriority:
 )
 async def create_handoff(
     request: CreateHandoffRequest,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> HandoffResponse:
     """Create a new handoff to a human agent.
 
@@ -275,7 +277,8 @@ async def create_handoff(
 )
 async def get_handoff_status(
     handoff_id: str,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> HandoffStatusResponse:
     """Get the status of an existing handoff.
 
@@ -358,7 +361,8 @@ async def get_handoff_status(
 async def list_handoffs(
     limit: int = 20,
     offset: int = 0,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> Dict[str, Any]:
     """List all handoffs with pagination.
 
@@ -411,7 +415,8 @@ async def list_handoffs(
 async def list_conversation_handoffs(
     conversation_id: str,
     limit: int = 10,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> list[Dict[str, Any]]:
     """List all handoffs for a specific conversation.
 
@@ -460,7 +465,8 @@ async def list_conversation_handoffs(
 )
 async def cancel_handoff(
     handoff_id: str,
-    api_key: APIKey = Depends(get_api_key)
+    api_key: APIKey = Depends(get_api_key),
+    rate_limit: bool = Depends(check_rate_limit)
 ) -> dict:
     """Cancel an existing handoff.
 
